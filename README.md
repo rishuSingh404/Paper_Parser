@@ -1,67 +1,78 @@
 # Paper Radar
 
 A personal research-paper discovery + momentum-tracking system for one researcher.
-It casts a wide net across open scholarly APIs, dedupes, enriches with
-citation/reference data, computes **deterministic** trend signals (no LLM in the
-loop), and surfaces everything on a live dashboard + Telegram digest so the
+It casts a wide net across open scholarly APIs, dedupes across sources, enriches
+with citation/reference data, computes **deterministic** trend signals (no LLM in
+the loop), and surfaces everything on a live dashboard + Telegram digest so the
 researcher does their own analysis efficiently.
 
-Full design: [`docs/PLAN.md`](docs/PLAN.md) (mirror of the approved plan).
+Full design: [`docs/PLAN.md`](docs/PLAN.md) · setup & testing: [`docs/SETUP.md`](docs/SETUP.md)
 
-## Status — Phase 0 (skeleton + observability)
+## What it does
 
-| Area | State |
-|---|---|
-| Postgres schema (`db/schema.sql`) + decided seed config (`db/seed_config.sql`) | ✅ |
-| Worker: config load, DB helpers, arXiv advisory lock, run/api logging | ✅ |
-| Ingest: `RawPaper`, cross-source `upsert_paper`, arXiv client (rate-limited + backoff) | ✅ |
-| On-demand 6-month term backfill (web service `/internal/backfill-term`) | ✅ |
-| Daily pipeline steps 0–3 (drain backfills → fetch arXiv → upsert → recompute `term_counts`) | ✅ |
-| Bootstrap job (`python -m worker.backfill`) — arXiv history sweep + baselines | ✅ |
-| `render.yaml` (cron + web service + one-off job + Postgres) | ✅ |
-| Multi-source ingest (HF/OpenReview/bioRxiv/Crossref/OpenAlex/S2/CORE/DBLP/EuropePMC) | ⬜ Phase 1 |
-| Enrichment: citations, reference graph, abstract resolution, embeddings | ⬜ Phase 2 |
-| Scoring: momentum/bursts/co-citation/recall gate/ranking/clustering | ⬜ Phase 4 |
-| Digest UX, feedback, precision@k, config panel + version history | ⬜ Phase 5 |
-| Next.js dashboard (Vercel) | ⬜ Phase 5 |
+- **Ingest** — arXiv (niche queries + broad category sweep) plus Hugging Face
+  Daily Papers, OpenAlex, Crossref, Semantic Scholar, CORE, DBLP, Europe PMC,
+  bioRxiv/medRxiv, OpenReview. Each source is an isolated module toggled by
+  `config.sources`; the system still produces a digest from arXiv alone.
+- **Dedupe** — DOI → versionless arXiv id → title/author/year hash; one `papers`
+  row, many `paper_sources`.
+- **Two distinct "rising" signals** — term **mention momentum** (this ISO week's
+  distinct-paper count vs the term's own trailing-6-week mean) and paper
+  **citation velocity** (30-day delta, shown as a lagging 🔥/📈/⚪ tag, never fed
+  into the rank). Plus **multi-lab burst** (a term from K distinct first-author
+  groups in 3 weeks).
+- **Broad-track scoring** — self-hosted embedding similarity to open-problem
+  statements + seed papers + a liked-paper centroid, word-boundary lexical
+  matching (`\bterm\b`, not substring), OpenAlex concept overlap, local
+  co-citation velocity, HF upvotes. **Threshold-based recall gate**, not top-N;
+  every component is stored separately and shown on the card with a "why" line.
+- **Self-evolving vocab** — grows from 👍 feedback (bigrams), decays each run,
+  prunes learned terms that go quiet. Seed terms never pruned.
+- **Emergent clusters** — monthly HDBSCAN + c-TF-IDF labels, matched to the
+  previous month by member-id Jaccard so `cluster_key` continuity is real.
+- **On-demand backfill** — adding a keyword/query from the dashboard triggers an
+  immediate 6-month arXiv backfill, bucketed by each paper's real publication
+  week so an established term doesn't fake a momentum spike.
+- **Measurement** — per-card 👍/👎/ignored outcomes, weekly precision@10,
+  lead-time audit against `eval_labels`.
 
-## Architecture
+## Layout
 
 ```
-Render                                          Vercel
-──────────────────────────────────────          ─────────────────────
-cron  : python -m worker.run   (daily)          Next.js dashboard
-web   : uvicorn worker.app:app (backfill/run)   /api/state  (live)
-job   : python -m worker.backfill (once)        /api/config (token-gated)
-                     │                                   │
-                     └────────── Postgres ───────────────┘
+db/schema.sql          full schema
+db/seed_config.sql     the decided cold-start config (project-derived seed_vocab)
+worker/                Python: ingest, enrich, pipeline, digest, run/backfill, FastAPI app
+  ingest/              one module per source + registry + on-demand term_backfill
+  enrich/              abstracts, citations + reference graph, embeddings, concept/repo tags
+  pipeline/            vocab, momentum + bursts, score, niche, cluster, suggestions, citation tiers
+dashboard/             Next.js (App Router): /api/{state,config,feedback,runs} + one page
+scripts/               inspect_db.py (what did it pull?), e2e_offline.py (deterministic test)
+render.yaml            worker blueprint (cron + web service + one-off job + Postgres)
 ```
 
-All arXiv access from any worker component is serialized through one Postgres
-advisory lock (`worker/arxiv_lock.py`).
-
-## Local dev
+## Quick start (local)
 
 ```bash
-python3 -m venv .venv && source .venv/bin/activate
-pip install -r worker/requirements.txt
-
-cp .env.example .env          # fill DATABASE_URL at minimum
+createdb paper_radar
+export DATABASE_URL="postgresql://localhost/paper_radar"
 psql "$DATABASE_URL" -f db/schema.sql
 psql "$DATABASE_URL" -f db/seed_config.sql
 
-python -m worker.run          # one daily run
-uvicorn worker.app:app --reload   # the web service
+python3 -m venv .venv && . .venv/bin/activate
+pip install -r worker/requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu
+
+python -m worker.backfill        # 12-16 weeks of history so momentum works day 1
+python -m worker.run             # one daily run
+python scripts/inspect_db.py     # <- what it pulled + the latest digest
+
+cd dashboard && npm install && npm run build && npm start   # http://localhost:3000
 ```
 
-## Deploy
-
-- **Worker + DB**: `render.yaml` blueprint. Read the instance-tier box at the top
-  of that file — the daily cron's `plan` is a placeholder until Phase 2 profiles
-  the embedding model's real RSS.
-- **Dashboard**: Vercel (Phase 5).
+Deploy: worker → Render (`render.yaml`), dashboard → Vercel. See
+[`docs/SETUP.md`](docs/SETUP.md) for env vars, the embedding-tier decision, and
+the verification checklist.
 
 ## Attribution
 
-All commits are authored by **Rishu Kumar Singh**. Remote:
+All commits authored by **Rishu Kumar Singh**. Remote:
 `github.com/rishuSingh404/Paper_Parser`.

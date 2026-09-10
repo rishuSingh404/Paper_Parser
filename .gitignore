@@ -14,7 +14,11 @@ node_modules/
 .next/
 out/
 .vercel/
-next-env.d.ts
+*.tsbuildinfo
+
+# --- local scratch run logs ---
+.run*.log
+.dash.log
 
 # --- Env / secrets (NEVER commit) ---
 .env

@@ -12,6 +12,9 @@ INTERNAL_SHARED_SECRET = os.environ.get("INTERNAL_SHARED_SECRET", "")
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 
+# Public dashboard URL (used only for the "full digest" link in the Telegram message)
+DASHBOARD_URL = os.environ.get("DASHBOARD_URL", "")
+
 # Enrichment (all optional — the system degrades to arXiv-only without them)
 OPENALEX_API_KEY = os.environ.get("OPENALEX_API_KEY", "")
 CORE_API_KEY = os.environ.get("CORE_API_KEY", "")
@@ -28,8 +31,9 @@ ARXIV_BACKOFF_START_SECONDS = float(os.environ.get("ARXIV_BACKOFF_START_SECONDS"
 TERM_BACKFILL_MAX_REQUESTS = int(os.environ.get("TERM_BACKFILL_MAX_REQUESTS", "8"))
 TERM_BACKFILL_PAGE_SIZE = int(os.environ.get("TERM_BACKFILL_PAGE_SIZE", "100"))
 
-# Daily fetch sizing (kept small for Phase 0; raised in Phase 1/4)
+# Daily fetch sizing
 DAILY_MAX_RESULTS_PER_QUERY = int(os.environ.get("DAILY_MAX_RESULTS_PER_QUERY", "100"))
+DAILY_BROAD_MAX_RESULTS = int(os.environ.get("DAILY_BROAD_MAX_RESULTS", "300"))
 
 _repo = "https://github.com/rishuSingh404/Paper_Parser"
 USER_AGENT = os.environ.get(

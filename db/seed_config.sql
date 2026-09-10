@@ -80,7 +80,8 @@ VALUES (
     "lexical": 0.5,
     "cocitation_velocity": 2,
     "hf_upvotes": 20,
-    "concept_overlap": 2
+    "concept_overlap": 2,
+    "hard_cap": 60
   }$json$::jsonb,
 
   -- rank_weights: HEURISTIC (see plan step 9 - not derived from anything more
@@ -94,3 +95,13 @@ VALUES (
   }$json$::jsonb
 )
 ON CONFLICT (id) DO NOTHING;
+
+-- Materialise the seed vocabulary into the `vocab` table (is_seed = true, never
+-- auto-pruned). The daily run also does this defensively; doing it here means
+-- momentum + lexical scoring work on the very first run.
+INSERT INTO vocab (term, weight, is_seed)
+SELECT lower(key), value::real, true
+FROM config, jsonb_each_text(config.seed_vocab)
+WHERE config.id = 1
+ON CONFLICT (term) DO UPDATE SET is_seed = true;
+

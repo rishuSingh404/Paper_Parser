@@ -21,6 +21,26 @@ def strip_accents(s: str) -> str:
     return unicodedata.normalize("NFKD", s or "").encode("ascii", "ignore").decode()
 
 
+def strip_tags(s: str | None) -> str | None:
+    """Drop JATS / HTML tags (Crossref & Europe PMC abstracts carry them)."""
+    if not s:
+        return None
+    out = re.sub(r"<[^>]+>", " ", s)
+    out = re.sub(r"\s+", " ", out).strip()
+    return out or None
+
+
+def abstract_from_inverted_index(inv: dict | None) -> str | None:
+    """Reconstruct an OpenAlex abstract_inverted_index into plain text."""
+    if not inv:
+        return None
+    pos: dict[int, str] = {}
+    for word, idxs in inv.items():
+        for i in idxs:
+            pos[i] = word
+    return " ".join(pos[i] for i in sorted(pos)) or None
+
+
 def normalize_ws(s: str) -> str:
     return " ".join((s or "").split())
 

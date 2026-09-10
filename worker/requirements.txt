@@ -1,5 +1,12 @@
-# Paper Radar worker — Phase 0/1 runtime deps (kept lean so the Render image
-# stays small until Phase 2 pulls in the ML stack).
+# Paper Radar worker.
+#
+# The web service (worker.app) needs only the "core" block. The daily Cron Job
+# and the bootstrap Job additionally need the "ML" block for embeddings +
+# clustering; if the ML block is absent those steps log a skip and the pipeline
+# runs lexical-only. Keep the web service image lean by installing core only
+# there (see render.yaml build commands).
+
+# --- core ---
 httpx>=0.27,<1.0
 feedparser>=6.0.10
 psycopg[binary]>=3.2,<4.0
@@ -7,17 +14,13 @@ fastapi>=0.115,<1.0
 uvicorn[standard]>=0.30
 pydantic>=2.7,<3.0
 
-# --- Phase 2 (embeddings) — uncomment when worker/enrich/embeddings.py lands ---
-# pgvector>=0.3
-# numpy>=1.26
-# torch  # CPU wheel: --extra-index-url https://download.pytorch.org/whl/cpu
-# sentence-transformers>=3.0
-# transformers>=4.44
-# adapters>=1.0          # only if using allenai/specter2 adapters
+# --- ML (embeddings + clustering); vectors are stored as REAL[], no pgvector ---
+numpy>=1.26,<3.0
+scikit-learn>=1.4
+hdbscan>=0.8.36
+sentence-transformers>=3.0
+# torch is pulled in by sentence-transformers; on Render add the CPU index:
+#   pip install -r worker/requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu
 
-# --- Phase 4/6 ---
-# scikit-learn>=1.5      # c-TF-IDF cluster labels
-# hdbscan>=0.8           # clustering
-
-# --- Phase 1 (OpenReview source) ---
-# openreview-py>=1.40
+# --- optional: only if switching embedding_model_version to allenai/specter2_base ---
+# adapters>=1.0

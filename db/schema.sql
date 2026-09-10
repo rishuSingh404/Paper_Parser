@@ -6,10 +6,10 @@
 --   ~/.claude/plans/read-this-plan-and-soft-finch.md  ("Database schema" section)
 -- Deviations from PAPER_RADAR_SPEC section 3 are intentional and noted inline.
 
--- pgvector is used for embedding similarity. If the target Postgres cannot
--- install it, replace `vector` columns with `real[]` and do cosine in numpy
--- (volume is thousands of rows, not millions — a sequential scan is fine).
-CREATE EXTENSION IF NOT EXISTS vector;
+-- Embeddings are stored as REAL[] and cosine is computed in numpy/Python
+-- (volume is thousands of rows, not millions — a sequential scan is fine, and
+-- this drops the pgvector dependency entirely). The approved plan sanctions
+-- this fallback explicitly.
 
 -- ---------------------------------------------------------------------------
 -- Papers + per-source provenance
@@ -31,6 +31,8 @@ CREATE TABLE papers (
   announce_date       DATE,                        -- week-bucketing key (arXiv: submission date proxy; OAI datestamp later)
   link                TEXT,
   categories          TEXT[] NOT NULL DEFAULT '{}',
+  concepts            TEXT[] NOT NULL DEFAULT '{}',   -- OpenAlex topic/concept tags
+  repo_url            TEXT,                            -- linked code repo (HF / arXiv comments)
   is_survey           BOOLEAN NOT NULL DEFAULT FALSE,
   muted               BOOLEAN NOT NULL DEFAULT FALSE,
   first_seen_at       TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -79,7 +81,7 @@ CREATE INDEX citation_edges_cited_idx ON citation_edges (cited_paper_id);
 CREATE TABLE embeddings (
   paper_id      TEXT NOT NULL REFERENCES papers(paper_id) ON DELETE CASCADE,
   model_version TEXT NOT NULL,
-  vector        vector,               -- dim depends on model (MiniLM 384 / specter2 768)
+  embedding     REAL[] NOT NULL,      -- dim depends on model (MiniLM 384 / specter2 768)
   created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
   PRIMARY KEY (paper_id, model_version)
 );
@@ -90,7 +92,7 @@ CREATE TABLE anchor_embeddings (
   anchor_kind   TEXT NOT NULL,        -- open_problem | seed_paper | liked_centroid
   anchor_id     TEXT NOT NULL,        -- ordinal | paper_id | 'centroid'
   model_version TEXT NOT NULL,
-  vector        vector,
+  embedding     REAL[] NOT NULL,
   text          TEXT,
   updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
   PRIMARY KEY (anchor_kind, anchor_id, model_version)

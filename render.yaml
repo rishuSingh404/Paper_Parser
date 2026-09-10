@@ -40,7 +40,7 @@ services:
     runtime: python
     plan: starter                    # PLACEHOLDER — see header box
     schedule: "0 3 * * *"            # 03:00 UTC; adjust to config.timezone preference
-    buildCommand: "pip install -r worker/requirements.txt"
+    buildCommand: "pip install -r worker/requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu"
     startCommand: "python -m worker.run"
     envVars:
       - key: DATABASE_URL
@@ -54,7 +54,7 @@ services:
     name: paper-radar-worker-api
     runtime: python
     plan: starter                    # model-free; starter is enough
-    buildCommand: "pip install -r worker/requirements.txt"
+    buildCommand: "pip install -r worker/requirements-core.txt"
     startCommand: "uvicorn worker.app:app --host 0.0.0.0 --port $PORT"
     healthCheckPath: /healthz
     envVars:
@@ -72,7 +72,7 @@ services:
     runtime: python
     plan: starter
     schedule: "0 0 31 2 *"
-    buildCommand: "pip install -r worker/requirements.txt"
+    buildCommand: "pip install -r worker/requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu"
     startCommand: "python -m worker.backfill"
     envVars:
       - key: DATABASE_URL

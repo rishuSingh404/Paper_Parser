@@ -29,6 +29,20 @@ def source_enabled(cfg: dict, name: str) -> bool:
     return bool(entry and entry.get("enabled"))
 
 
+def sync_seed_vocab(conn: psycopg.Connection, cfg: dict) -> None:
+    """Ensure every `config.seed_vocab` term exists in the `vocab` table as a
+    seed (weight set only on first insert; existing weight/history preserved).
+    Defensive — seed_config.sql already does this on setup, and the dashboard
+    config POST handles adds/removes."""
+    for term, weight in (cfg.get("seed_vocab") or {}).items():
+        db.execute(
+            conn,
+            "INSERT INTO vocab (term, weight, is_seed) VALUES (%s, %s, TRUE) "
+            "ON CONFLICT (term) DO UPDATE SET is_seed = TRUE",
+            (str(term).lower(), float(weight)),
+        )
+
+
 def all_terms(cfg: dict) -> list[str]:
     """seed vocab terms; the live tracked set also includes learned terms in
     the `vocab` table (see pipeline)."""
