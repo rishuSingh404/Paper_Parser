@@ -55,8 +55,17 @@ def get_json(
             if r.status_code in (400, 401, 403, 404, 422):
                 return None  # terminal — often "no more results" or missing key
             r.raise_for_status()
-            return r.json()
-        except (httpx.HTTPError, ValueError) as exc:
+            try:
+                return r.json()
+            except ValueError as exc:
+                # 200 but not JSON — usually a rate-limit / HTML error page
+                # (DBLP does this). Retrying rarely helps: bail immediately.
+                if on_call:
+                    on_call(source=source, endpoint=endpoint or url, status=r.status_code,
+                            latency_ms=int((time.monotonic() - t0) * 1000),
+                            quota_note=f"non-JSON body: {exc}")
+                return None
+        except httpx.HTTPError as exc:
             if on_call:
                 on_call(source=source, endpoint=endpoint or url, status=None,
                         latency_ms=int((time.monotonic() - t0) * 1000), quota_note=repr(exc))

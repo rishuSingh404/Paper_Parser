@@ -9,7 +9,7 @@ from __future__ import annotations
 import psycopg
 
 from .. import db
-from ..isoweek import recent_weeks, week_monday
+from ..isoweek import recent_weeks
 from ..textutil import escape_term_posix
 
 LOOKBACK = 6

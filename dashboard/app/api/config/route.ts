@@ -140,13 +140,18 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  const justAdded = enqueued.length
-    ? await q(
-        `SELECT paper_id, title, link, announce_date
-         FROM papers WHERE first_seen_at > now() - interval '15 minutes'
-         ORDER BY announce_date DESC NULLS LAST LIMIT 120`,
-      )
-    : [];
+  // prefer the exact papers each backfill returned; fall back to a recency window
+  const fromBackfills = backfills.flatMap((b: any) => Array.isArray(b?.papers) ? b.papers : []);
+  const justAdded =
+    fromBackfills.length > 0
+      ? fromBackfills.slice(0, 200)
+      : enqueued.length
+        ? await q(
+            `SELECT paper_id, title, link, announce_date
+             FROM papers WHERE first_seen_at > now() - interval '15 minutes'
+             ORDER BY announce_date DESC NULLS LAST LIMIT 120`,
+          )
+        : [];
 
   return NextResponse.json({ ok: true, enqueued: enqueued.length, backfills, just_added: justAdded });
 }

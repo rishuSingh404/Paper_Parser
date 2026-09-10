@@ -29,7 +29,10 @@ def fetch(since: dt.datetime | None, params: dict, on_call=None) -> Iterator[Raw
             params={"q": term, "format": "json", "h": min(hits, 100)},
             source="dblp", endpoint="search/publ", on_call=on_call, pace=1.0,
         )
-        for h in (((data or {}).get("result") or {}).get("hits") or {}).get("hit", []) or []:
+        hits = (((data or {}).get("result") or {}).get("hits") or {}).get("hit", []) or []
+        if isinstance(hits, dict):  # DBLP returns a bare object for a single hit
+            hits = [hits]
+        for h in hits:
             info = h.get("info") or {}
             title = (info.get("title") or "").rstrip(".")
             if not title:
