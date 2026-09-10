@@ -1,0 +1,82 @@
+# Paper Radar — Render blueprint (worker: 3 components + Postgres).
+# The Next.js dashboard deploys separately on Vercel.
+#
+# ┌─ INSTANCE TIER — DO NOT SHIP THE PLACEHOLDER ────────────────────────────┐
+# │ The `paper-radar-daily` cron's `plan` below is a PLACEHOLDER. Phase 2    │
+# │ must profile the real peak RSS of the configured embedding model on this │
+# │ container and set `plan` from the measured number:                      │
+# │   <= ~450 MB RSS  -> starter  (512 MB, ~$7/mo)   [all-MiniLM-L6-v2, default] │
+# │   ~1-2 GB  RSS    -> standard (2 GB,  ~$25/mo)   [allenai/specter2_base]     │
+# │ Record the measured RSS here as a comment before the first real deploy.  │
+# └────────────────────────────────────────────────────────────────────────┘
+
+databases:
+  - name: paper-radar-db
+    plan: free
+    postgresMajorVersion: "16"
+
+envVarGroups:
+  - name: paper-radar-shared
+    envVars:
+      - key: INTERNAL_SHARED_SECRET
+        generateValue: true          # same generated value shared across all 3 services
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false
+      - key: OPENALEX_API_KEY
+        sync: false
+      - key: CORE_API_KEY
+        sync: false
+      - key: CROSSREF_MAILTO
+        sync: false
+      - key: SEMANTIC_SCHOLAR_API_KEY
+        sync: false
+
+services:
+  # (1) daily pipeline
+  - type: cron
+    name: paper-radar-daily
+    runtime: python
+    plan: starter                    # PLACEHOLDER — see header box
+    schedule: "0 3 * * *"            # 03:00 UTC; adjust to config.timezone preference
+    buildCommand: "pip install -r worker/requirements.txt"
+    startCommand: "python -m worker.run"
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: paper-radar-db
+          property: connectionString
+      - fromGroup: paper-radar-shared
+
+  # (2) small always-available API: dashboard-triggered term backfill + manual run
+  - type: web
+    name: paper-radar-worker-api
+    runtime: python
+    plan: starter                    # model-free; starter is enough
+    buildCommand: "pip install -r worker/requirements.txt"
+    startCommand: "uvicorn worker.app:app --host 0.0.0.0 --port $PORT"
+    healthCheckPath: /healthz
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: paper-radar-db
+          property: connectionString
+      - fromGroup: paper-radar-shared
+
+  # (3) one-off bootstrap backfill. `schedule` is set to a date that never
+  #     occurs (Feb 31) — trigger it manually from the Render dashboard once,
+  #     it runs and exits.
+  - type: cron
+    name: paper-radar-bootstrap
+    runtime: python
+    plan: starter
+    schedule: "0 0 31 2 *"
+    buildCommand: "pip install -r worker/requirements.txt"
+    startCommand: "python -m worker.backfill"
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: paper-radar-db
+          property: connectionString
+      - fromGroup: paper-radar-shared

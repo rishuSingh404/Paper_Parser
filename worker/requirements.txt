@@ -1,0 +1,23 @@
+# Paper Radar worker — Phase 0/1 runtime deps (kept lean so the Render image
+# stays small until Phase 2 pulls in the ML stack).
+httpx>=0.27,<1.0
+feedparser>=6.0.10
+psycopg[binary]>=3.2,<4.0
+fastapi>=0.115,<1.0
+uvicorn[standard]>=0.30
+pydantic>=2.7,<3.0
+
+# --- Phase 2 (embeddings) — uncomment when worker/enrich/embeddings.py lands ---
+# pgvector>=0.3
+# numpy>=1.26
+# torch  # CPU wheel: --extra-index-url https://download.pytorch.org/whl/cpu
+# sentence-transformers>=3.0
+# transformers>=4.44
+# adapters>=1.0          # only if using allenai/specter2 adapters
+
+# --- Phase 4/6 ---
+# scikit-learn>=1.5      # c-TF-IDF cluster labels
+# hdbscan>=0.8           # clustering
+
+# --- Phase 1 (OpenReview source) ---
+# openreview-py>=1.40
