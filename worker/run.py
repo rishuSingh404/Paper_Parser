@@ -71,20 +71,34 @@ def run_daily(kind: str = "daily") -> dict:
             db.claim_marker(conn, f"run:{today.isoformat()}")
 
             # ---- steps 0-1a: arXiv (under the shared lock) --------------------
+            # Every sub-step below rolls back on its own exception (not just
+            # logs it) — a DB-level failure (e.g. a constraint violation from a
+            # bad upsert) otherwise leaves the whole transaction "aborted" in
+            # Postgres, and every later statement on this same connection fails
+            # with InFailedSqlTransaction — including the generic-sources loop,
+            # enrichment, and the run's own cleanup. Hit live in production.
+            def _rb() -> None:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+
             with arxiv_lock(conn, wait=True):
                 try:
                     rlog.stat("term_backfills", term_backfill.drain_pending(conn, on_call=on_call))
                 except Exception as exc:
                     rlog.error("term_backfill.drain", exc)
+                    _rb()
                 for query in cfg["niche_queries"]:
                     try:
                         _, batch = arxiv.search(query, max_results=settings.DAILY_MAX_RESULTS_PER_QUERY,
                                                 on_call=on_call)
+                        seen.update(upsert_papers_batch(conn, batch))
+                        rlog.incr("arxiv_niche", len(batch))
                     except Exception as exc:
                         rlog.error(f"arxiv_niche:{query[:40]}", exc)
+                        _rb()
                         continue
-                    seen.update(upsert_papers_batch(conn, batch))
-                    rlog.incr("arxiv_niche", len(batch))
                 broad_q = " OR ".join(f"cat:{c}" for c in cfg["broad_categories"])
                 try:
                     _, bbatch = arxiv.search(broad_q, max_results=BROAD_MAX, on_call=on_call)
@@ -92,6 +106,7 @@ def run_daily(kind: str = "daily") -> dict:
                     rlog.incr("arxiv_broad", len(bbatch))
                 except Exception as exc:
                     rlog.error("arxiv_broad", exc)
+                    _rb()
 
             # ---- step 1b: generic sources (no arXiv lock) --------------------
             gq = _generic_queries(conn, cfg)
@@ -120,8 +135,23 @@ def run_daily(kind: str = "daily") -> dict:
                                 f"SET upvotes = EXCLUDED.upvotes, comments = EXCLUDED.comments",
                                 [v for row in hf_rows for v in row],
                             )
+                    conn.commit()  # checkpoint per source — matches backfill.py:
+                                   # one source's later failure must not roll back
+                                   # sources that already succeeded in this run
                 except Exception as exc:  # one source must not kill the run
                     rlog.error(f"ingest:{mod.name}", exc)
+                    try:
+                        conn.rollback()  # clear the aborted transaction so the
+                                         # NEXT source (and everything after this
+                                         # loop) can still use this connection —
+                                         # hit live in production: a failed hf_daily
+                                         # upsert left every later statement this
+                                         # run (crossref, europepmc, the run's own
+                                         # cleanup) failing with
+                                         # InFailedSqlTransaction until the process died
+                    except Exception:
+                        pass  # connection itself is dead — the outer try/except
+                              # will end the run; whatever committed above stands
                 rlog.incr(f"src_{mod.name}", n)
             rlog.stat("papers_upserted", len(seen))
 

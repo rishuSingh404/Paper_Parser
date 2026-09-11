@@ -65,10 +65,16 @@ _PAPERS_UPSERT = """
         announce_date   = LEAST(papers.announce_date, EXCLUDED.announce_date),
         published_date  = LEAST(papers.published_date, EXCLUDED.published_date),
         first_author_group = COALESCE(papers.first_author_group, EXCLUDED.first_author_group),
-        categories      = (
+        -- `categories` is NOT NULL. array_agg() over ZERO input rows returns
+        -- NULL, always — not '{}' — even when both sides being unnested are
+        -- themselves valid, non-null empty arrays (e.g. two hf_daily rows for
+        -- the same paper, which never sets categories). Hit this live in
+        -- production: an hf_daily upsert violated the NOT NULL constraint.
+        -- The outer COALESCE guarantees a real array either way.
+        categories      = COALESCE((
             SELECT array_agg(DISTINCT c)
             FROM unnest(papers.categories || EXCLUDED.categories) AS c
-        ),
+        ), '{}'),
         is_survey       = papers.is_survey OR EXCLUDED.is_survey
 """
 
