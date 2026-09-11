@@ -1,30 +1,29 @@
-# Paper Radar — Render blueprint (worker: 3 components).
+# Paper Radar — Render blueprint.
 # The Next.js dashboard deploys separately on Vercel. Postgres is NOT
-# provisioned here — this project uses a Neon database instead (Neon's free
-# tier doesn't expire after 30 days the way Render's free Postgres does).
-# Paste the Neon connection string into DATABASE_URL in the
-# `paper-radar-shared` env group below after the first deploy.
+# provisioned here — this project uses Neon instead (Neon's free tier doesn't
+# expire after 30 days the way Render's free Postgres does).
 #
-# All three services are pinned to `region: ohio` because the Neon project is
-# in AWS us-east-2 (Ohio) — same-region keeps DB round-trips in the low
-# single-digit milliseconds. Cross-region (e.g. this blueprint applied from a
-# default-region deploy) measured ~330ms per round trip in testing, which
-# turns a ~500-paper ingest into tens of minutes of pure insert latency. If
-# your Neon project is in a different region, change `region:` to match.
+# ONE service, on Render's free plan, no card required. Render Cron Jobs have
+# no free tier at all (confirmed against Render's blueprint schema — `plan:
+# free` is rejected for `type: cron`) and require a card on file even though
+# actual usage-based cost would be pennies/month. Rather than ask for a card,
+# the daily run and the one-off bootstrap are triggered over HTTP by a
+# scheduled GitHub Actions workflow instead — see .github/workflows/daily.yml
+# and .github/workflows/bootstrap.yml.
 #
-# ┌─ INSTANCE TIER ───────────────────────────────────────────────────────────┐
-# │ Render's `free` plan is only a valid `plan:` value for `type: web`         │
-# │ (confirmed against Render's blueprint schema — cron services reject it).   │
-# │ So: the web service (2) runs on `free`. The two cron services (1, 3)       │
-# │ must be `starter` at minimum — BUT Render bills cron jobs per execution-   │
-# │ SECOND on that plan's rate, not a flat monthly fee: the daily run takes    │
-# │ a few minutes, so actual cost is more like cents/month, not $7/mo flat.    │
-# │ all-MiniLM-L6-v2 (default embedding model) should fit `starter`'s 512 MB.  │
-# │ If Phase 2 profiling shows it needs more, or you switch to                 │
-# │ `allenai/specter2_base` (~1-2 GB RSS), bump `paper-radar-daily` to         │
-# │ `standard` — same per-second billing caveat applies. Record the profiled   │
-# │ peak RSS here once measured on the real container.                        │
-# └────────────────────────────────────────────────────────────────────────┘
+# Trade-off: this service runs worker/requirements-core.txt (no torch /
+# sentence-transformers / hdbscan) so it fits comfortably in the free tier's
+# 512 MB RAM. Embeddings and HDBSCAN clustering are skipped as a result —
+# scoring still runs on lexical + co-citation + HF-upvote signals. To get
+# embeddings back: switch buildCommand to worker/requirements.txt and bump
+# `plan` to a paid tier with more RAM (a card is unavoidable at that point,
+# since it's a genuinely paid plan, not a billing quirk).
+#
+# All requests to Neon go over the public internet from wherever Render places
+# this service — pin `region: ohio` to match Neon's `aws-us-east-2` project
+# and keep DB round-trips in single-digit ms (measured ~330ms/round-trip
+# cross-region in testing). If your Neon project is in a different region,
+# change `region:` to match.
 
 envVarGroups:
   - name: paper-radar-shared
@@ -32,7 +31,7 @@ envVarGroups:
       - key: DATABASE_URL
         sync: false                  # paste the Neon connection string here
       - key: INTERNAL_SHARED_SECRET
-        generateValue: true          # same generated value shared across all 3 services
+        generateValue: true          # also put this value in the GitHub Actions secrets
       - key: TELEGRAM_BOT_TOKEN
         sync: false
       - key: TELEGRAM_CHAT_ID
@@ -47,40 +46,13 @@ envVarGroups:
         sync: false
 
 services:
-  # (1) daily pipeline
-  - type: cron
-    name: paper-radar-daily
-    runtime: python
-    region: ohio
-    plan: starter                     # cron type has no free plan — see header box (per-second billing)
-    schedule: "0 3 * * *"            # 03:00 UTC; adjust to config.timezone preference
-    buildCommand: "pip install -r worker/requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu"
-    startCommand: "python -m worker.run"
-    envVars:
-      - fromGroup: paper-radar-shared
-
-  # (2) small always-available API: dashboard-triggered term backfill + manual run
   - type: web
     name: paper-radar-worker-api
     runtime: python
     region: ohio
-    plan: free                        # model-free, low traffic — free tier is plenty
+    plan: free                       # no card required
     buildCommand: "pip install -r worker/requirements-core.txt"
     startCommand: "uvicorn worker.app:app --host 0.0.0.0 --port $PORT"
     healthCheckPath: /healthz
-    envVars:
-      - fromGroup: paper-radar-shared
-
-  # (3) one-off bootstrap backfill. `schedule` is set to a date that never
-  #     occurs (Feb 31) — trigger it manually from the Render dashboard once,
-  #     it runs and exits.
-  - type: cron
-    name: paper-radar-bootstrap
-    runtime: python
-    region: ohio
-    plan: starter                     # cron type has no free plan — see header box (per-second billing)
-    schedule: "0 0 31 2 *"
-    buildCommand: "pip install -r worker/requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu"
-    startCommand: "python -m worker.backfill"
     envVars:
       - fromGroup: paper-radar-shared

@@ -1,0 +1,27 @@
+name: Paper Radar bootstrap (manual, one-off)
+
+# 12-16 week history backfill so momentum has a baseline on day 1. Run this
+# ONCE from the Actions tab ("Run workflow") after the worker is deployed on
+# Render, not on a schedule. Same repo secrets as daily.yml.
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: POST /internal/bootstrap
+        run: |
+          set -e
+          code=$(curl -sS -o response.json -w "%{http_code}" \
+            --max-time 6900 --retry 1 --retry-connrefused \
+            -X POST "${{ secrets.WORKER_URL }}/internal/bootstrap" \
+            -H "x-internal-secret: ${{ secrets.INTERNAL_SHARED_SECRET }}")
+          echo "HTTP $code"
+          cat response.json
+          if [ "$code" != "200" ]; then
+            echo "::error::bootstrap failed with HTTP $code"
+            exit 1
+          fi

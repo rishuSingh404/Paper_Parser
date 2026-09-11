@@ -1,0 +1,35 @@
+name: Paper Radar daily run
+
+# Triggers the daily pipeline over HTTP instead of a Render Cron Job (Render's
+# cron plan has no free tier and requires a card on file; this is the
+# zero-cost alternative — see render.yaml).
+#
+# Repo secrets required (Settings -> Secrets and variables -> Actions):
+#   WORKER_URL              e.g. https://paper-radar-worker-api.onrender.com
+#   INTERNAL_SHARED_SECRET  same value as the Render env var
+
+on:
+  schedule:
+    - cron: "0 3 * * *"   # 03:00 UTC daily
+  workflow_dispatch: {}    # allows a manual "Run workflow" trigger too
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: POST /internal/run
+        run: |
+          set -e
+          # Render's free tier sleeps after inactivity; give it room to wake
+          # up plus the full pipeline runtime.
+          code=$(curl -sS -o response.json -w "%{http_code}" \
+            --max-time 2100 --retry 2 --retry-delay 15 --retry-connrefused \
+            -X POST "${{ secrets.WORKER_URL }}/internal/run" \
+            -H "x-internal-secret: ${{ secrets.INTERNAL_SHARED_SECRET }}")
+          echo "HTTP $code"
+          cat response.json
+          if [ "$code" != "200" ]; then
+            echo "::error::daily run failed with HTTP $code"
+            exit 1
+          fi
