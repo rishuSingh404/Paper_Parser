@@ -12,7 +12,7 @@ import json
 import sys
 
 from . import config_store, db, digest, settings, telegram
-from .arxiv_lock import arxiv_lock
+from .arxiv_lock import arxiv_lock, release_pipeline_lock, try_pipeline_lock
 from .enrich import abstracts, citations, embeddings, tags
 from .ingest import arxiv, term_backfill
 from .ingest.base import upsert_papers_batch
@@ -45,6 +45,17 @@ def _tracked_terms(conn, cfg: dict) -> list[str]:
 def run_daily(kind: str = "daily") -> dict:
     today = dt.date.today()
     week = current_iso_week(today)
+
+    # One full pipeline at a time (run_bootstrap shares this key too) — a
+    # duplicate/overlapping trigger (Render retry, a manual re-fire while the
+    # scheduled one is still going) must bail out cheaply, not pile up a
+    # second heavy run alongside the first and OOM the instance. Held on a
+    # connection kept open for this whole function; see arxiv_lock.py.
+    lock_conn = db.raw_connect()
+    if not try_pipeline_lock(lock_conn):
+        lock_conn.close()
+        return {"status": "skipped", "reason": "another pipeline run is already in progress"}
+
     rlog = RunLog(kind=kind, run_date=today).start()
 
     def on_call(**kw):
@@ -210,6 +221,9 @@ def run_daily(kind: str = "daily") -> dict:
         summary = rlog.finish("error")
         telegram.send(f"[Paper Radar] run {today.isoformat()} FAILED: {exc!r}")
         raise
+    finally:
+        release_pipeline_lock(lock_conn)
+        lock_conn.close()
 
 
 if __name__ == "__main__":

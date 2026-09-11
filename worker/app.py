@@ -1,19 +1,23 @@
 """Worker web service:  uvicorn worker.app:app --host 0.0.0.0 --port $PORT
 
-Small and model-free (requirements-core.txt — no torch/sentence-transformers/
-hdbscan) so it fits Render's free tier (512 MB, no card required). Runs on
-Render's Free plan; the daily pipeline and the one-off bootstrap are triggered
-over HTTP by a scheduled GitHub Actions workflow rather than a Render Cron Job
-(Render's cron plan has no free tier and requires a card on file — this avoids
-that entirely). All internal endpoints require the shared secret.
+Runs on requirements-core.txt (no torch/sentence-transformers — that heavy
+local-model path stays in requirements.txt for optional self-hosted mode) so
+it fits Render's free tier (512 MB, no card required). numpy/scikit-learn/
+hdbscan ARE in requirements-core: clustering itself is cheap, only a local
+neural embedding model needed real RAM. Embeddings run via the hosted Voyage
+AI API (worker/enrich/embeddings.py, HOSTED = bool(VOYAGE_API_KEY)) instead of
+a local model — no extra RAM either way, just an HTTP call. The daily pipeline
+and the one-off bootstrap are triggered over HTTP by a scheduled GitHub
+Actions workflow rather than a Render Cron Job (Render's cron plan has no free
+tier and requires a card on file — this avoids that entirely). All internal
+endpoints require the shared secret.
 
-Trade-off of staying on the free/lean stack: embeddings and HDBSCAN clustering
-are skipped (worker.enrich.embeddings.AVAILABLE / worker.pipeline.cluster.AVAILABLE
-are False without the ML deps) — scoring still runs on lexical + co-citation +
-HF-upvote signals, just without the embedding-similarity component. To get
-embeddings back: switch this service (or a separate one) to
-`worker/requirements.txt` and a paid Render plan with more RAM — see the
-Cost note in render.yaml.
+/internal/run and /internal/bootstrap both take a whole-pipeline Postgres
+advisory lock (arxiv_lock.PIPELINE_LOCK_KEY) before doing any real work and
+return {"status": "skipped"} immediately if another run already holds it —
+learned this the hard way: a slow/retried trigger plus a second manual one
+piled up 2-3 full pipelines on this 512 MB instance at once and OOM-killed the
+container, orphaning every one of them as a permanently "running" row.
 """
 from __future__ import annotations
 

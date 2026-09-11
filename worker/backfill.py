@@ -19,7 +19,7 @@ import os
 import sys
 
 from . import config_store, db
-from .arxiv_lock import arxiv_lock
+from .arxiv_lock import arxiv_lock, release_pipeline_lock, try_pipeline_lock
 from .enrich import abstracts, citations, embeddings, tags
 from .ingest import arxiv
 from .ingest.base import upsert_papers_batch
@@ -36,6 +36,14 @@ PAGE_SIZE = 100
 def run_bootstrap() -> dict:
     today = dt.date.today()
     since = dt.datetime.now() - dt.timedelta(weeks=HISTORY_WEEKS)
+
+    # Shares PIPELINE_LOCK_KEY with run_daily — a bootstrap and a daily run
+    # must not overlap either, same OOM/pile-up risk. See arxiv_lock.py.
+    lock_conn = db.raw_connect()
+    if not try_pipeline_lock(lock_conn):
+        lock_conn.close()
+        return {"status": "skipped", "reason": "another pipeline run is already in progress"}
+
     rlog = RunLog(kind="backfill", run_date=today).start()
 
     def on_call(**kw):
@@ -145,6 +153,9 @@ def run_bootstrap() -> dict:
         summary = rlog.finish("error")
         print(json.dumps(summary, indent=2, default=str), file=sys.stderr)
         raise
+    finally:
+        release_pipeline_lock(lock_conn)
+        lock_conn.close()
 
 
 if __name__ == "__main__":

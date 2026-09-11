@@ -14,6 +14,15 @@ from psycopg.rows import dict_row
 from . import settings
 
 
+def raw_connect() -> psycopg.Connection:
+    """A plain, autocommit, caller-managed connection — NOT a context manager.
+    For a connection that must stay open across a whole long-running operation
+    it doesn't otherwise touch (e.g. holding a session-scoped advisory lock
+    across the full pipeline run in arxiv_lock.py) rather than the single
+    transaction connect() is built for. Caller must close() it."""
+    return psycopg.connect(settings.require_database_url(), row_factory=dict_row, autocommit=True)
+
+
 @contextlib.contextmanager
 def connect() -> Iterator[psycopg.Connection]:
     conn = psycopg.connect(settings.require_database_url(), row_factory=dict_row, autocommit=False)
