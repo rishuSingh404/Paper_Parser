@@ -63,6 +63,7 @@ def run_bootstrap() -> dict:
                     if batch:
                         seen.update(upsert_papers_batch(conn, batch))
                     rlog.stat("arxiv_upserted", len(seen))
+            conn.commit()  # durable checkpoint — a later failure must not cost this
 
             # ---- generic sources, wide window --------------------------
             phrases = niche.niche_phrases(cfg)
@@ -92,8 +93,17 @@ def run_bootstrap() -> dict:
                                 f"SET upvotes = EXCLUDED.upvotes, comments = EXCLUDED.comments",
                                 [v for row in hf_rows for v in row],
                             )
+                    conn.commit()  # checkpoint per source — one source's later
+                                   # failure (or connection loss) must not roll
+                                   # back sources that already succeeded
                 except Exception as exc:
                     rlog.error(f"ingest:{mod.name}", exc)
+                    try:
+                        conn.rollback()  # clear the aborted transaction so the
+                                         # NEXT source can still use this conn
+                    except Exception:
+                        pass  # connection itself is dead — the outer try/except
+                              # will end the run; whatever committed above stands
                 rlog.incr(f"src_{mod.name}", n)
 
             # ---- baselines across ALL history weeks --------------------
@@ -103,8 +113,9 @@ def run_bootstrap() -> dict:
                 term_counts.recompute_term(conn, t)
             term_counts.recompute_category_volume(conn)
             term_counts.refresh_last_seen(conn)
+            conn.commit()
 
-            # ---- enrichment -----------------------------------------------
+            # ---- enrichment (each step its own checkpoint) -----------------
             for fn, label in (
                 (lambda: abstracts.resolve_missing(conn, limit=800, on_call=on_call), "abstracts"),
                 (lambda: tags.apply(conn, limit=2000), "tags"),
@@ -115,8 +126,13 @@ def run_bootstrap() -> dict:
             ):
                 try:
                     rlog.stat(label, fn())
+                    conn.commit()
                 except Exception as exc:
                     rlog.error(f"enrich:{label}", exc)
+                    try:
+                        conn.rollback()
+                    except Exception:
+                        pass
 
             rlog.stat("papers_upserted", len(seen))
             rlog.stat("history_weeks", HISTORY_WEEKS)

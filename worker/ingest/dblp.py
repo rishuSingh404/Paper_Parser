@@ -22,11 +22,11 @@ _URL = "https://dblp.org/search/publ/api"
 
 def fetch(since: dt.datetime | None, params: dict, on_call=None) -> Iterator[RawPaper]:
     min_year = (since.year if since else dt.date.today().year - 1)
-    hits = int(params.get("max_per_query", 30))
+    page_size = int(params.get("max_per_query", 30))
     for term in params.get("queries", []):
         data = http.get_json(
             _URL,
-            params={"q": term, "format": "json", "h": min(hits, 100)},
+            params={"q": term, "format": "json", "h": min(page_size, 100)},
             source="dblp", endpoint="search/publ", on_call=on_call, pace=1.0,
         )
         hits = (((data or {}).get("result") or {}).get("hits") or {}).get("hit", []) or []
