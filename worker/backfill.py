@@ -110,8 +110,8 @@ def run_bootstrap() -> dict:
                 (lambda: tags.apply(conn, limit=2000), "tags"),
                 (lambda: citations.refresh_snapshots(conn, limit=800, on_call=on_call), "cite_snapshots"),
                 (lambda: citations.build_reference_edges(conn, limit=1500, on_call=on_call), "cite_edges"),
-                (lambda: embeddings.embed_new_papers(conn, cfg["embedding_model_version"], limit=5000), "embed"),
-                (lambda: embeddings.embed_anchors(conn, cfg), "anchors"),
+                (lambda: embeddings.embed_new_papers(conn, cfg["embedding_model_version"], limit=5000, on_call=on_call), "embed"),
+                (lambda: embeddings.embed_anchors(conn, cfg, on_call=on_call), "anchors"),
             ):
                 try:
                     rlog.stat(label, fn())
