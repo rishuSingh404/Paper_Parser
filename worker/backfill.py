@@ -22,7 +22,7 @@ from . import config_store, db
 from .arxiv_lock import arxiv_lock
 from .enrich import abstracts, citations, embeddings, tags
 from .ingest import arxiv
-from .ingest.base import upsert_paper
+from .ingest.base import upsert_papers_batch
 from .ingest.registry import enabled_generic
 from .observability import RunLog
 from .pipeline import niche
@@ -53,9 +53,15 @@ def run_bootstrap() -> dict:
             queries.append(" OR ".join(f"cat:{c}" for c in cfg["broad_categories"]))
             with arxiv_lock(conn, wait=True):
                 for q in queries:
+                    batch: list = []
                     for rp in arxiv.paginate(q, since=since.date(), page_size=PAGE_SIZE,
                                              max_requests=MAX_REQUESTS_PER_QUERY, on_call=on_call):
-                        seen.add(upsert_paper(conn, rp))
+                        batch.append(rp)
+                        if len(batch) >= PAGE_SIZE:
+                            seen.update(upsert_papers_batch(conn, batch))
+                            batch = []
+                    if batch:
+                        seen.update(upsert_papers_batch(conn, batch))
                     rlog.stat("arxiv_upserted", len(seen))
 
             # ---- generic sources, wide window --------------------------
@@ -68,18 +74,23 @@ def run_bootstrap() -> dict:
             for mod in enabled_generic(cfg):
                 n = 0
                 try:
-                    for rp in mod.fetch(since, params, on_call=on_call):
-                        pid = upsert_paper(conn, rp)
-                        seen.add(pid)
-                        n += 1
-                        if rp.source == "hf_daily":
-                            db.execute(
-                                conn,
-                                "INSERT INTO hf_signals (paper_id, snapshot_date, upvotes, comments) "
-                                "VALUES (%s, %s, %s, %s) ON CONFLICT (paper_id, snapshot_date) DO UPDATE "
-                                "SET upvotes = EXCLUDED.upvotes, comments = EXCLUDED.comments",
-                                (pid, rp.extra.get("hf_date") or today.isoformat(),
-                                 rp.extra.get("hf_upvotes", 0), rp.extra.get("hf_comments", 0)),
+                    rps = list(mod.fetch(since, params, on_call=on_call))
+                    ids = upsert_papers_batch(conn, rps)
+                    seen.update(ids)
+                    n = len(rps)
+                    hf_rows = [
+                        (pid, rp.extra.get("hf_date") or today.isoformat(),
+                         rp.extra.get("hf_upvotes", 0), rp.extra.get("hf_comments", 0))
+                        for pid, rp in zip(ids, rps) if rp.source == "hf_daily"
+                    ]
+                    if hf_rows:
+                        with conn.cursor() as cur:
+                            placeholders = ", ".join(["(%s,%s,%s,%s)"] * len(hf_rows))
+                            cur.execute(
+                                f"INSERT INTO hf_signals (paper_id, snapshot_date, upvotes, comments) "
+                                f"VALUES {placeholders} ON CONFLICT (paper_id, snapshot_date) DO UPDATE "
+                                f"SET upvotes = EXCLUDED.upvotes, comments = EXCLUDED.comments",
+                                [v for row in hf_rows for v in row],
                             )
                 except Exception as exc:
                     rlog.error(f"ingest:{mod.name}", exc)

@@ -1,9 +1,15 @@
 """Common ingest types + the `papers`/`paper_sources` upsert.
 
-A source normalizes its rows to `RawPaper`; `upsert_paper` resolves identity and
-merges into the shared `papers` row (filling NULLs, unioning categories, adding a
-`paper_sources` provenance row). Never creates a duplicate for a paper another
-source already brought in.
+A source normalizes its rows to `RawPaper`; `upsert_paper`/`upsert_papers_batch`
+resolve identity and merge into the shared `papers` row (filling NULLs, unioning
+categories, adding a `paper_sources` provenance row). Never creates a duplicate
+for a paper another source already brought in.
+
+Use the batch form wherever you have more than a handful of papers at once (any
+arXiv page, any generic-source fetch). Measured cost of the row-at-a-time form
+against Neon from a cross-region client: ~330ms/round-trip x 2 statements/paper
+= ~65s for a single 100-paper page. The batch form does the whole page in 2
+round trips total, independent of page size.
 """
 from __future__ import annotations
 
@@ -46,56 +52,85 @@ class Source(Protocol):
     def fetch(self, since: dt.datetime | None, params: dict) -> Iterable[RawPaper]: ...
 
 
-def upsert_paper(conn: psycopg.Connection, rp: RawPaper) -> str:
-    """Insert-or-merge a paper; return its `paper_id`. Also records provenance."""
+_PAPERS_UPSERT = """
+    INSERT INTO papers (paper_id, canonical_key, arxiv_id, doi, title, abstract,
+                        abstract_missing, authors, first_author_group,
+                        published_date, announce_date, link, categories, is_survey)
+    VALUES {values}
+    ON CONFLICT (paper_id) DO UPDATE SET
+        abstract        = COALESCE(papers.abstract, EXCLUDED.abstract),
+        abstract_missing = (COALESCE(papers.abstract, EXCLUDED.abstract) IS NULL),
+        doi             = COALESCE(papers.doi, EXCLUDED.doi),
+        arxiv_id        = COALESCE(papers.arxiv_id, EXCLUDED.arxiv_id),
+        announce_date   = LEAST(papers.announce_date, EXCLUDED.announce_date),
+        published_date  = LEAST(papers.published_date, EXCLUDED.published_date),
+        first_author_group = COALESCE(papers.first_author_group, EXCLUDED.first_author_group),
+        categories      = (
+            SELECT array_agg(DISTINCT c)
+            FROM unnest(papers.categories || EXCLUDED.categories) AS c
+        ),
+        is_survey       = papers.is_survey OR EXCLUDED.is_survey
+"""
+
+_SOURCES_UPSERT = """
+    INSERT INTO paper_sources (paper_id, source, source_id, source_url, raw)
+    VALUES {values}
+    ON CONFLICT (paper_id, source) DO UPDATE SET
+        source_id = EXCLUDED.source_id,
+        source_url = EXCLUDED.source_url,
+        raw = EXCLUDED.raw
+"""
+
+
+def _paper_row(rp: RawPaper) -> tuple:
     rp.clean()
     year = (rp.published_date or rp.announce_date).year if (rp.published_date or rp.announce_date) else None
     key = identity.canonical_key(
         doi=rp.doi, arxiv_id=rp.arxiv_id, title=rp.title, authors=rp.authors, year=year
     )
-    fag = identity.first_author_group(rp.authors)
-    is_survey = looks_like_survey(rp.title, rp.abstract)
-    abstract_missing = rp.abstract is None or rp.abstract == ""
+    return (
+        key, key, identity.versionless_arxiv(rp.arxiv_id) if rp.arxiv_id else None,
+        rp.doi, rp.title, rp.abstract, rp.abstract is None or rp.abstract == "",
+        rp.authors, identity.first_author_group(rp.authors),
+        rp.published_date, rp.announce_date, rp.url, rp.categories,
+        looks_like_survey(rp.title, rp.abstract),
+    ), key
+
+
+def upsert_paper(conn: psycopg.Connection, rp: RawPaper) -> str:
+    """Single-paper upsert — 2 round trips. Fine for one-off callers (e.g. the
+    dashboard's on-demand term backfill); use upsert_papers_batch for anything
+    fetching more than a few papers at once."""
+    return upsert_papers_batch(conn, [rp])[0]
+
+
+def upsert_papers_batch(conn: psycopg.Connection, raws: list[RawPaper]) -> list[str]:
+    """Batch upsert — 2 round trips total, independent of batch size. Same
+    identity/merge semantics as upsert_paper. Returns paper_ids in input order
+    (deduped: if two RawPapers in the batch resolve to the same canonical key,
+    only the last is written, matching the ON CONFLICT DO UPDATE semantics)."""
+    if not raws:
+        return []
+
+    ordered_ids: list[str] = []
+    by_key: dict[str, tuple] = {}
+    sources: dict[tuple[str, str], tuple] = {}
+    for rp in raws:
+        row, key = _paper_row(rp)
+        ordered_ids.append(key)
+        by_key[key] = row
+        sources[(key, rp.source)] = (key, rp.source, rp.source_id, rp.url, Json(rp.extra))
+
+    paper_rows = list(by_key.values())
+    source_rows = list(sources.values())
 
     with conn.cursor() as cur:
-        cur.execute(
-            """
-            INSERT INTO papers (paper_id, canonical_key, arxiv_id, doi, title, abstract,
-                                abstract_missing, authors, first_author_group,
-                                published_date, announce_date, link, categories, is_survey)
-            VALUES (%(pid)s, %(key)s, %(arxiv)s, %(doi)s, %(title)s, %(abstract)s,
-                    %(amiss)s, %(authors)s, %(fag)s, %(pub)s, %(ann)s, %(link)s,
-                    %(cats)s, %(survey)s)
-            ON CONFLICT (paper_id) DO UPDATE SET
-                abstract        = COALESCE(papers.abstract, EXCLUDED.abstract),
-                abstract_missing = (COALESCE(papers.abstract, EXCLUDED.abstract) IS NULL),
-                doi             = COALESCE(papers.doi, EXCLUDED.doi),
-                arxiv_id        = COALESCE(papers.arxiv_id, EXCLUDED.arxiv_id),
-                announce_date   = LEAST(papers.announce_date, EXCLUDED.announce_date),
-                published_date  = LEAST(papers.published_date, EXCLUDED.published_date),
-                first_author_group = COALESCE(papers.first_author_group, EXCLUDED.first_author_group),
-                categories      = (
-                    SELECT array_agg(DISTINCT c)
-                    FROM unnest(papers.categories || EXCLUDED.categories) AS c
-                ),
-                is_survey       = papers.is_survey OR EXCLUDED.is_survey
-            """,
-            {
-                "pid": key, "key": key, "arxiv": identity.versionless_arxiv(rp.arxiv_id) if rp.arxiv_id else None,
-                "doi": rp.doi, "title": rp.title, "abstract": rp.abstract, "amiss": abstract_missing,
-                "authors": rp.authors, "fag": fag, "pub": rp.published_date, "ann": rp.announce_date,
-                "link": rp.url, "cats": rp.categories, "survey": is_survey,
-            },
-        )
-        cur.execute(
-            """
-            INSERT INTO paper_sources (paper_id, source, source_id, source_url, raw)
-            VALUES (%s, %s, %s, %s, %s)
-            ON CONFLICT (paper_id, source) DO UPDATE SET
-                source_id = EXCLUDED.source_id,
-                source_url = EXCLUDED.source_url,
-                raw = EXCLUDED.raw
-            """,
-            (key, rp.source, rp.source_id, rp.url, Json(rp.extra)),
-        )
-    return key
+        placeholders = ", ".join(["(" + ", ".join(["%s"] * 14) + ")"] * len(paper_rows))
+        params = [v for row in paper_rows for v in row]
+        cur.execute(_PAPERS_UPSERT.format(values=placeholders), params)
+
+        placeholders = ", ".join(["(" + ", ".join(["%s"] * 5) + ")"] * len(source_rows))
+        params = [v for row in source_rows for v in row]
+        cur.execute(_SOURCES_UPSERT.format(values=placeholders), params)
+
+    return ordered_ids

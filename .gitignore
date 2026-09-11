@@ -40,3 +40,4 @@ models/
 *.swp
 .idea/
 .vscode/
+.bootstrap*.log

@@ -22,7 +22,7 @@ from .. import config_store, db, settings
 from ..arxiv_lock import LockUnavailable, arxiv_lock
 from ..pipeline import terms
 from . import arxiv
-from .base import upsert_paper
+from .base import upsert_papers_batch
 
 
 def _since(months: int) -> dt.date:
@@ -51,20 +51,20 @@ def _execute_backfill(conn: psycopg.Connection, bf: dict, months: int,
         start=start,
         on_call=on_call,
     )
-    seen: list[dict] = []
+    raws: list = []
     cursor: int | None = None
     try:
         while True:
-            rp = next(gen)
-            pid = upsert_paper(conn, rp)
-            seen.append({
-                "paper_id": pid,
-                "title": rp.title,
-                "url": rp.url,
-                "announce_date": rp.announce_date.isoformat() if rp.announce_date else None,
-            })
+            raws.append(next(gen))
     except StopIteration as stop:
         cursor = stop.value  # int -> partial; None -> complete
+
+    ids = upsert_papers_batch(conn, raws)
+    seen = [
+        {"paper_id": pid, "title": rp.title, "url": rp.url,
+         "announce_date": rp.announce_date.isoformat() if rp.announce_date else None}
+        for pid, rp in zip(ids, raws)
+    ]
 
     if kind == "keyword":
         conn.execute(
