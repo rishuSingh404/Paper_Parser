@@ -22,17 +22,22 @@ VALUES (
     "abs:\"LLM safety\" AND abs:verification"
   ]$json$::jsonb,
 
-  -- broad_categories: cs.* core + eess.SP (DGT signal work) + stat.ML (cross-project causal verification)
-  $json$["cs.CL","cs.LG","cs.AI","cs.CV","cs.CR","eess.SP","stat.ML"]$json$::jsonb,
+  -- broad_categories: cs.* core + eess.SP (DGT signal work) + stat.ML (cross-project causal
+  -- verification) + cs.RO/cs.SE/cs.HC/cs.SY/cs.NE (widened for cross-domain discovery — the
+  -- goal is catching a technique popping in a field Rishu doesn't read, not just his own cs.CL/CV corner)
+  $json$["cs.CL","cs.LG","cs.AI","cs.CV","cs.CR","eess.SP","stat.ML","cs.RO","cs.SE","cs.HC","cs.SY","cs.NE"]$json$::jsonb,
 
-  -- seed_vocab {term: weight}
+  -- seed_vocab {term: weight}. NOTE: "causal" (too broad — a generic field name, drowns out the
+  -- specific "necessity ablation" pattern it was meant to catch) and "jepa" (Rishu already tracks
+  -- it directly now — it was the ORIGINAL example of a term to catch early, not something to keep
+  -- privileging once it's already his own work) were both demoted from seed_vocab -> is_seed=false
+  -- in production; kept here only as history of what NOT to reintroduce without reason.
   $json${
     "decorrelation": 1.0,
     "error correlation": 1.0,
     "latent critic": 1.0,
     "latent steering": 1.0,
     "verbalized uncertainty": 0.9,
-    "causal": 0.8,
     "necessity ablation": 1.0,
     "repair policy": 1.0,
     "neurosymbolic": 0.9,
@@ -41,8 +46,7 @@ VALUES (
     "grounding verification": 0.8,
     "process reward model": 0.9,
     "chain-of-thought faithfulness": 0.7,
-    "world model": 0.6,
-    "jepa": 0.6
+    "world model": 0.6
   }$json$::jsonb,
 
   -- open_problems: embedding anchors, re-derived from the projects

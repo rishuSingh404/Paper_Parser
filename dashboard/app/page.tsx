@@ -1,8 +1,8 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import {
-  BroadCard, BurstList, ClusterRollup, DiscoveryPanel, NicheCard, RisingTerms,
-  RunLogViewer, StalenessBanner, VocabPanel, WorkingPanel,
+  BroadCard, BurstList, ClusterRollup, CrossDomainCard, DiscoveryPanel, NicheCard,
+  RisingTerms, RunLogViewer, StalenessBanner, VocabPanel, WorkingPanel,
 } from "@/components/panels";
 import { ConfigPanel } from "@/components/ConfigPanel";
 
@@ -30,6 +30,7 @@ export default function Page() {
 
   const d = state.digest;
   const broad = d?.broad_ranked ?? [];
+  const crossDomain = d?.cross_domain ?? [];
   const niche = d?.niche_papers ?? [];
 
   return (
@@ -49,10 +50,27 @@ export default function Page() {
       <RisingTerms terms={d?.rising_terms ?? []} />
       <BurstList bursts={d?.bursts ?? []} />
 
-      <h2>🔭 What's emerging, unprompted</h2>
+      <h2>🌱 New field popping up ({(state.discovery ?? []).length + crossDomain.length})</h2>
+      <p className="mut" style={{ marginTop: -6 }}>
+        NOT your field — this is the "jepa was popping 5 months ago with only 2-3 papers, before
+        any hallucination paper touched it" catch. Term names first (below), papers carrying them
+        as evidence underneath. Read this before the field-of-yours section: this is the one that
+        pays off, the other one you'd have found anyway.
+      </p>
+      <h3 style={{ marginBottom: 6, fontSize: 13.5 }}>By name — terms rising outside your tracked vocab</h3>
       <DiscoveryPanel discovery={state.discovery ?? []} />
+      <h3 style={{ margin: "14px 0 6px", fontSize: 13.5 }}>By paper — structurally close to an open problem, not lexically in your field</h3>
+      {crossDomain.length === 0 && (
+        <p className="mut">Nothing cleared the cross-domain bar this week — quiet is a valid output.</p>
+      )}
+      {crossDomain.map((c: any) => <CrossDomainCard key={c.paper_id} c={c} onFeedback={load} />)}
 
-      <h2>Broad sweep ({broad.length}){d?.broad_ranked_truncated_at ? ` · truncated at ${d.broad_ranked_truncated_at}` : ""}</h2>
+      <h2>📍 Papers in your field ({broad.length}){d?.broad_ranked_truncated_at ? ` · truncated at ${d.broad_ranked_truncated_at}` : ""}</h2>
+      <p className="mut" style={{ marginTop: -6 }}>
+        Hallucination detection / mitigation, safety, security — squarely your domain. You'd
+        likely surface these yourself; kept here for completeness and momentum tracking, not
+        because they're the point of this system.
+      </p>
       {broad.length === 0 && <p className="mut">Quiet week — nothing cleared the recall gate. That is a valid output.</p>}
       {broad.map((c: any) => <BroadCard key={c.paper_id} c={c} onFeedback={load} />)}
 

@@ -164,6 +164,45 @@ export function BroadCard({ c, onFeedback }: { c: any; onFeedback: () => void })
   );
 }
 
+export function CrossDomainCard({ c, onFeedback }: { c: any; onFeedback: () => void }) {
+  const [open, setOpen] = useState(false);
+  // The "field name" — a mechanism term this paper carries (e.g. "latent steering"), or,
+  // failing that, the open-problem it's closest to. Shown first, big: this is the thing
+  // Rishu wants to catch by name, the way "jepa" would have shown up here 5 months early.
+  const fieldTag = (c.matched && c.matched[0]) || c.anchor_label || null;
+  return (
+    <div className="card" style={{ borderColor: "var(--ok)" }}>
+      {fieldTag && (
+        <div className="pill" style={{ borderColor: "var(--ok)", color: "var(--ok)", display: "inline-block", marginBottom: 6, fontWeight: 600 }}>
+          🏷 {fieldTag}
+        </div>
+      )}
+      <div className="row">
+        <b style={{ fontSize: 13.5 }}>#{c.rank} {c.title}</b>
+        <span className="pill" style={{ borderColor: "var(--ok)", color: "var(--ok)" }}>
+          sim {c.signals.embedding_sim}
+        </span>
+        <span className="pill">{c.citation_tag.badge}{c.citation_tag.delta != null ? ` +${c.citation_tag.delta}/30d` : " no data"}</span>
+      </div>
+      <div className="mut">
+        {(c.authors || []).slice(0, 5).join(", ")}{(c.authors || []).length > 5 ? " et al." : ""} · {fmtDate(c.announce_date)} ·{" "}
+        {(c.sources || []).join(", ")} · {c.link ? <a href={c.link} target="_blank" rel="noreferrer">link</a> : "no link"}
+        {c.abstract_missing ? " · ⚠ title-only (no abstract)" : ""}
+      </div>
+      <div className="why">🌍 {c.why}</div>
+      {c.abstract && (
+        <>
+          <button style={{ marginTop: 6 }} onClick={() => setOpen((v) => !v)}>
+            {open ? "hide abstract" : "abstract"}
+          </button>
+          {open && <div className="abx">{c.abstract}</div>}
+        </>
+      )}
+      <FeedbackButtons paperId={c.paper_id} onDone={onFeedback} />
+    </div>
+  );
+}
+
 export function NicheCard({ c, onFeedback }: { c: any; onFeedback: () => void }) {
   const [open, setOpen] = useState(false);
   return (

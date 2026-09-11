@@ -1,10 +1,30 @@
-"""Broad-track scoring (plan steps 7-9).
+"""Broad-track scoring (plan steps 7-9) + the cross-domain / new-field view.
 
 Deterministic. Component signals stay decomposable (each written to `signals`);
 the composite rank is ORDERING ONLY, never a gate. Inclusion is threshold-based
 (clear ANY recall-gate threshold), not top-N — a quiet week yields a short list.
 No token-ratio structural_overlap, no citation bonus: embeddings replace the
 former; citation status is a separate lagging tag.
+
+**Two sections, by `in_domain` alone.** Rishu's own framing: a paper that's
+about hallucination detection / mitigation / safety / security IS his domain —
+he'd surface that himself, it's not the point of this system. What's worth
+surfacing is a paper that is NOT his domain but is structurally close to one
+of his open problems: that's a transfer candidate, possibly from a field he
+doesn't read (the MedJEPA-Critic origin story — JEPA popping in unrelated
+domains 5 months before it had recognition, then "why not apply it to
+hallucination"). `score_broad` returns both `cards` (in_domain=True, ranked by
+the composite) and `cross_domain` (in_domain=False, ranked by embedding
+similarity), a clean partition of every candidate that cleared the recall
+gate — never a second bar to clear on top of the gate. (An earlier version
+additionally required embedding_sim above a floor to enter `cross_domain`,
+which silently routed a not-in-domain paper that passed the gate on a
+*lexical* or *co-citation* signal into the "in your field" list — exactly
+backwards; fixed.) `in_domain` = matched a niche_queries domain PHRASE
+("hallucination detection", "medical vision-language model", ...). Matching a
+seed_vocab MECHANISM term (`necessity ablation`, `latent steering`, ...) does
+NOT make a card in_domain — a mechanism you track turning up outside your
+domain is exactly the catch this is for.
 
 Title-only fallback: a paper with no resolvable abstract is scored on its title
 alone with `abstract_missing=True` surfaced on the card — never dropped.
@@ -20,9 +40,11 @@ from .. import db, vectors
 from ..textutil import matched_terms, word_boundary_match
 from . import citation_tier
 from .momentum import momentum_for
+from .niche import niche_phrases
 
 _CANDIDATE_UNIVERSE_CAP = 2500
 SIGNAL_NAMES = ("embedding_sim", "lexical", "concept_overlap", "cocitation_velocity", "hf_upvotes")
+CROSS_DOMAIN_CAP = 20
 
 
 def _minmax(values: list[float]) -> callable:
@@ -38,6 +60,7 @@ def score_broad(conn: psycopg.Connection, cfg: dict, current_week: str,
     weights = cfg.get("rank_weights") or {}
     gate = cfg.get("recall_gate_thresholds") or {}
     hard_cap = int(gate.get("hard_cap", 60))
+    domain_phrases = niche_phrases(cfg)
 
     vocab_w = {str(k).lower(): float(v) for k, v in (cfg.get("seed_vocab") or {}).items()}
     vocab_w.update({r["term"]: r["weight"] for r in db.q(conn, "SELECT term, weight FROM vocab")})
@@ -58,7 +81,7 @@ def score_broad(conn: psycopg.Connection, cfg: dict, current_week: str,
         (_CANDIDATE_UNIVERSE_CAP,),
     )
     if not cands:
-        return {"cards": [], "surfaced": 0, "universe": 0, "truncated_at": None}
+        return {"cards": [], "cross_domain": [], "surfaced": 0, "universe": 0, "truncated_at": None}
 
     ids = [c["paper_id"] for c in cands]
     src_map: dict[str, list[str]] = {}
@@ -92,6 +115,7 @@ def score_broad(conn: psycopg.Connection, cfg: dict, current_week: str,
     for c in cands:
         text = f"{c['title']} {c['abstract'] or ''}"
         matched = matched_terms(tracked_terms, text)
+        in_domain = bool(matched_terms(domain_phrases, text))
         lexical = sum(vocab_w.get(t, 0.0) * max(0.0, mom.get(t, {}).get("momentum", 0.0))
                       for t in matched)
 
@@ -125,34 +149,52 @@ def score_broad(conn: psycopg.Connection, cfg: dict, current_week: str,
         )
         if not passes:
             continue
-        scored.append({"row": c, "matched": matched, "sig": sig,
+        scored.append({"row": c, "matched": matched, "in_domain": in_domain, "sig": sig,
                        "best_anchor": best_anchor, "coc": coc, "hf": hf})
 
     if not scored:
-        return {"cards": [], "surfaced": 0, "universe": len(cands), "truncated_at": None}
+        return {"cards": [], "cross_domain": [], "surfaced": 0, "universe": len(cands), "truncated_at": None}
 
+    # ---- the two-section split, by `in_domain` alone -------------------------
+    # Every candidate here already cleared the recall gate on SOME signal — the
+    # split is only about which of the two sections it belongs in, never a second
+    # bar to clear. Earlier this also required embedding_sim >= a floor for
+    # "new field", which silently routed a not-in-domain paper that passed the
+    # gate on a *lexical* or *co-citation* signal (not embedding) into the
+    # "in your field" bucket — exactly backwards. `in_domain` (matched a
+    # niche_queries domain PHRASE, e.g. "hallucination detection") is the only
+    # test: not matching it is what "not your field" means, full stop.
+    cross = sorted((s for s in scored if not s["in_domain"]),
+                    key=lambda s: -(s["sig"]["embedding_sim"] or 0.0))[:CROSS_DOMAIN_CAP]
+
+    # ---- main list: in_domain candidates, ranked by the usual composite -----
+    main = [s for s in scored if s["in_domain"]]
     norms = {
         name: _minmax([float(s["sig"][name] or 0.0) for s in scored])
         for name in SIGNAL_NAMES
     }
-    for s in scored:
+    for s in main:
         s["composite"] = round(sum(
             (weights.get(name, 0.0)) * norms[name](float(s["sig"][name] or 0.0))
             for name in SIGNAL_NAMES
         ), 5)
-    scored.sort(key=lambda s: -s["composite"])
+    main.sort(key=lambda s: -s["composite"])
 
     truncated_at = None
-    if len(scored) > hard_cap:
+    if len(main) > hard_cap:
         truncated_at = hard_cap
-        scored = scored[:hard_cap]
+        main = main[:hard_cap]
 
     run_date = dt.date.today()
-    cards = []
-    for rank, s in enumerate(scored, 1):
+
+    def build(s: dict, rank: int, rank_kind: str) -> dict:
         c = s["row"]
         tag = tag_map.get(c["paper_id"], {"tier": "ndata", "delta": None})
         why = _why(s, tag)
+        anchor_label = None
+        if s["best_anchor"]:
+            kind, atext = s["best_anchor"]
+            anchor_label = (atext[:60] + "…") if atext and len(atext) > 60 else (atext or kind)
         for name, val in s["sig"].items():
             if val is None:
                 continue
@@ -168,11 +210,12 @@ def score_broad(conn: psycopg.Connection, cfg: dict, current_week: str,
         db.execute(
             conn,
             "INSERT INTO signals (paper_id, run_date, name, value, detail) "
-            "VALUES (%s, %s, 'composite_rank', %s, %s) "
+            "VALUES (%s, %s, %s, %s, %s) "
             "ON CONFLICT (paper_id, run_date, name) DO UPDATE SET value = EXCLUDED.value, detail = EXCLUDED.detail",
-            (c["paper_id"], run_date, float(rank), Json({"composite": s["composite"], "why": why})),
+            (c["paper_id"], run_date, rank_kind, float(rank),
+             Json({"composite": s.get("composite"), "why": why})),
         )
-        cards.append({
+        return {
             "paper_id": c["paper_id"],
             "title": c["title"],
             "authors": c["authors"][:8],
@@ -180,18 +223,25 @@ def score_broad(conn: psycopg.Connection, cfg: dict, current_week: str,
             "link": c["link"],
             "sources": src_map.get(c["paper_id"], []),
             "rank": rank,
-            "composite": s["composite"],
+            "composite": s.get("composite"),
             "signals": s["sig"],
             "why": why,
+            "matched": s["matched"],
+            "in_domain": s["in_domain"],
+            "anchor_label": anchor_label,
             "abstract": c["abstract"],
             "abstract_missing": c["abstract_missing"],
             "citation_tag": {
                 "tier": tag["tier"], "delta": tag["delta"],
                 "badge": citation_tier.BADGE[tag["tier"]],
             },
-        })
-    return {"cards": cards, "surfaced": len(cards), "universe": len(cands),
-            "truncated_at": truncated_at}
+        }
+
+    cross_cards = [build(s, rank, "cross_domain_rank") for rank, s in enumerate(cross, 1)]
+    cards = [build(s, rank, "composite_rank") for rank, s in enumerate(main, 1)]
+
+    return {"cards": cards, "cross_domain": cross_cards, "surfaced": len(cards),
+            "universe": len(cands), "truncated_at": truncated_at}
 
 
 def _why(s: dict, tag: dict) -> str:

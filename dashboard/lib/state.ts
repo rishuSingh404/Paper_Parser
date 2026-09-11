@@ -4,7 +4,7 @@ export type State = Awaited<ReturnType<typeof getState>>;
 
 export async function getState() {
   const digest = await q1<any>(
-    `SELECT run_date, mode, papers_scanned, broad_ranked, niche_papers,
+    `SELECT run_date, mode, papers_scanned, broad_ranked, cross_domain, niche_papers,
             rising_terms, bursts, clusters_summary, created_at
      FROM digests ORDER BY run_date DESC LIMIT 1`,
   );

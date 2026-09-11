@@ -55,7 +55,16 @@ DOMAIN_STOP_BIGRAMS: frozenset[str] = frozenset({
     "results highlight", "methods typically", "benchmarks demonstrate",
     "increasingly used", "widely used", "commonly used", "further improves",
     "benchmark dataset", "benchmark datasets", "downstream tasks",
-    "downstream task",
+    "downstream task", "test whether", "sufficient conditions",
+    "remains robust", "proposed method", "proposed framework",
+    "percentage points", "typically rely", "propose method", "novel method",
+    "novel approach", "extensive evaluation", "shows that", "show that",
+    "demonstrate that", "achieves state", "compared existing",
+    "promising results", "consistently outperforms", "achieve state",
+    "achieving state", "remains challenging", "still challenging",
+    "remains largely", "poorly understood", "not well", "lack of",
+    "address this", "to address", "key challenge", "main challenge",
+    "propose novel", "introduce novel", "present novel",
 })
 
 

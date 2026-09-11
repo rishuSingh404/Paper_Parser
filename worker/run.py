@@ -170,6 +170,7 @@ def run_daily(kind: str = "daily") -> dict:
                 cl = {"skipped": repr(exc)}
             rlog.stat("cluster", cl)
             rlog.stat("broad", {k: broad[k] for k in ("surfaced", "universe", "truncated_at")})
+            rlog.stat("cross_domain", len(broad["cross_domain"]))
 
             clusters_summary = db.q(
                 conn,
@@ -183,6 +184,7 @@ def run_daily(kind: str = "daily") -> dict:
 
             # ---- step 13: store digest ------------------------------------
             digest.store(conn, today, cfg["digest_mode"], broad=broad["cards"],
+                         cross_domain=broad["cross_domain"],
                          niche=niche_feed, rising=rising, bursts=bursts,
                          clusters=clusters_summary, papers_scanned=len(seen))
 
@@ -195,6 +197,7 @@ def run_daily(kind: str = "daily") -> dict:
             today, cfg["digest_mode"], broad=broad["cards"], niche=niche_feed,
             rising=rising, bursts=bursts, unprompted=unprompted, papers_scanned=len(seen),
             dashboard_url=settings.DASHBOARD_URL or None,
+            cross_domain=broad["cross_domain"],
         )
         rlog.stat("telegram", telegram.send(text))
 

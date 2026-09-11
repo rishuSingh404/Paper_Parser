@@ -194,6 +194,7 @@ CREATE TABLE digests (
   run_date         DATE PRIMARY KEY,
   mode             TEXT NOT NULL DEFAULT 'calibration' CHECK (mode IN ('calibration','live')),
   broad_ranked     JSONB NOT NULL DEFAULT '[]',   -- ranked candidates: scores + per-signal breakdown + why-flagged
+  cross_domain     JSONB NOT NULL DEFAULT '[]',   -- structurally similar to an open problem, NOT already in Rishu's domain vocab — the transfer-candidate view
   niche_papers     JSONB NOT NULL DEFAULT '[]',
   rising_terms     JSONB NOT NULL DEFAULT '[]',
   bursts           JSONB NOT NULL DEFAULT '[]',
@@ -205,7 +206,7 @@ CREATE TABLE digests (
 CREATE TABLE digest_cards (
   run_date   DATE NOT NULL,
   paper_id   TEXT NOT NULL REFERENCES papers(paper_id) ON DELETE CASCADE,
-  section    TEXT NOT NULL CHECK (section IN ('broad','niche')),
+  section    TEXT NOT NULL CHECK (section IN ('broad','niche','cross_domain')),
   rank       INT,
   outcome    TEXT CHECK (outcome IN ('liked','disliked','muted','saved','ignored')),
   outcome_at TIMESTAMPTZ,
