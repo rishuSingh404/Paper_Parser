@@ -5,6 +5,13 @@
 # Paste the Neon connection string into DATABASE_URL in the
 # `paper-radar-shared` env group below after the first deploy.
 #
+# All three services are pinned to `region: ohio` because the Neon project is
+# in AWS us-east-2 (Ohio) — same-region keeps DB round-trips in the low
+# single-digit milliseconds. Cross-region (e.g. this blueprint applied from a
+# default-region deploy) measured ~330ms per round trip in testing, which
+# turns a ~500-paper ingest into tens of minutes of pure insert latency. If
+# your Neon project is in a different region, change `region:` to match.
+#
 # ┌─ INSTANCE TIER — DO NOT SHIP THE PLACEHOLDER ────────────────────────────┐
 # │ The `paper-radar-daily` cron's `plan` below is a PLACEHOLDER. Phase 2    │
 # │ must profile the real peak RSS of the configured embedding model on this │
@@ -39,6 +46,7 @@ services:
   - type: cron
     name: paper-radar-daily
     runtime: python
+    region: ohio
     plan: starter                    # PLACEHOLDER — see header box
     schedule: "0 3 * * *"            # 03:00 UTC; adjust to config.timezone preference
     buildCommand: "pip install -r worker/requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu"
@@ -50,6 +58,7 @@ services:
   - type: web
     name: paper-radar-worker-api
     runtime: python
+    region: ohio
     plan: starter                    # model-free; starter is enough
     buildCommand: "pip install -r worker/requirements-core.txt"
     startCommand: "uvicorn worker.app:app --host 0.0.0.0 --port $PORT"
@@ -63,6 +72,7 @@ services:
   - type: cron
     name: paper-radar-bootstrap
     runtime: python
+    region: ohio
     plan: starter
     schedule: "0 0 31 2 *"
     buildCommand: "pip install -r worker/requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu"
