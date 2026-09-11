@@ -1,5 +1,9 @@
-# Paper Radar — Render blueprint (worker: 3 components + Postgres).
-# The Next.js dashboard deploys separately on Vercel.
+# Paper Radar — Render blueprint (worker: 3 components).
+# The Next.js dashboard deploys separately on Vercel. Postgres is NOT
+# provisioned here — this project uses a Neon database instead (Neon's free
+# tier doesn't expire after 30 days the way Render's free Postgres does).
+# Paste the Neon connection string into DATABASE_URL in the
+# `paper-radar-shared` env group below after the first deploy.
 #
 # ┌─ INSTANCE TIER — DO NOT SHIP THE PLACEHOLDER ────────────────────────────┐
 # │ The `paper-radar-daily` cron's `plan` below is a PLACEHOLDER. Phase 2    │
@@ -10,14 +14,11 @@
 # │ Record the measured RSS here as a comment before the first real deploy.  │
 # └────────────────────────────────────────────────────────────────────────┘
 
-databases:
-  - name: paper-radar-db
-    plan: free
-    postgresMajorVersion: "16"
-
 envVarGroups:
   - name: paper-radar-shared
     envVars:
+      - key: DATABASE_URL
+        sync: false                  # paste the Neon connection string here
       - key: INTERNAL_SHARED_SECRET
         generateValue: true          # same generated value shared across all 3 services
       - key: TELEGRAM_BOT_TOKEN
@@ -43,10 +44,6 @@ services:
     buildCommand: "pip install -r worker/requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu"
     startCommand: "python -m worker.run"
     envVars:
-      - key: DATABASE_URL
-        fromDatabase:
-          name: paper-radar-db
-          property: connectionString
       - fromGroup: paper-radar-shared
 
   # (2) small always-available API: dashboard-triggered term backfill + manual run
@@ -58,10 +55,6 @@ services:
     startCommand: "uvicorn worker.app:app --host 0.0.0.0 --port $PORT"
     healthCheckPath: /healthz
     envVars:
-      - key: DATABASE_URL
-        fromDatabase:
-          name: paper-radar-db
-          property: connectionString
       - fromGroup: paper-radar-shared
 
   # (3) one-off bootstrap backfill. `schedule` is set to a date that never
@@ -75,8 +68,4 @@ services:
     buildCommand: "pip install -r worker/requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu"
     startCommand: "python -m worker.backfill"
     envVars:
-      - key: DATABASE_URL
-        fromDatabase:
-          name: paper-radar-db
-          property: connectionString
       - fromGroup: paper-radar-shared
