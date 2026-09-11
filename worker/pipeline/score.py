@@ -42,7 +42,18 @@ from . import citation_tier
 from .momentum import momentum_for
 from .niche import niche_phrases
 
-_CANDIDATE_UNIVERSE_CAP = 2500
+_CANDIDATE_UNIVERSE_CAP = 1000  # lowered from 2500 (2026-09-11): the worker runs
+# on Render's free 512 MB instance; scoring builds an in-memory structure per
+# candidate (matched terms, embedding cosine vs every anchor, per-card signal
+# writes) and this is the single biggest transient allocation in the pipeline.
+# Widening broad_categories earlier this session (cs.RO/SE/HC/SY/NE, for
+# cross-domain reach) means the daily universe hits this cap far more often
+# than before. Observed live: the container crashed mid-run 3x in one night at
+# unpredictable phases (once mid-DBLP, once mid-crossref) after the DBLP and
+# categories-NULL bugs were already fixed — the signature of an OOM kill, not
+# a deterministic fault. 1000 recent candidates/day is still generous (arXiv
+# alone announces roughly that many across these categories per day) and cuts
+# this step's peak footprint well below what 2500 was costing.
 SIGNAL_NAMES = ("embedding_sim", "lexical", "concept_overlap", "cocitation_velocity", "hf_upvotes")
 CROSS_DOMAIN_CAP = 20
 
