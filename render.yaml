@@ -12,13 +12,18 @@
 # turns a ~500-paper ingest into tens of minutes of pure insert latency. If
 # your Neon project is in a different region, change `region:` to match.
 #
-# ┌─ INSTANCE TIER — DO NOT SHIP THE PLACEHOLDER ────────────────────────────┐
-# │ The `paper-radar-daily` cron's `plan` below is a PLACEHOLDER. Phase 2    │
-# │ must profile the real peak RSS of the configured embedding model on this │
-# │ container and set `plan` from the measured number:                      │
-# │   <= ~450 MB RSS  -> starter  (512 MB, ~$7/mo)   [all-MiniLM-L6-v2, default] │
-# │   ~1-2 GB  RSS    -> standard (2 GB,  ~$25/mo)   [allenai/specter2_base]     │
-# │ Record the measured RSS here as a comment before the first real deploy.  │
+# ┌─ INSTANCE TIER ───────────────────────────────────────────────────────────┐
+# │ Render's `free` plan is only a valid `plan:` value for `type: web`         │
+# │ (confirmed against Render's blueprint schema — cron services reject it).   │
+# │ So: the web service (2) runs on `free`. The two cron services (1, 3)       │
+# │ must be `starter` at minimum — BUT Render bills cron jobs per execution-   │
+# │ SECOND on that plan's rate, not a flat monthly fee: the daily run takes    │
+# │ a few minutes, so actual cost is more like cents/month, not $7/mo flat.    │
+# │ all-MiniLM-L6-v2 (default embedding model) should fit `starter`'s 512 MB.  │
+# │ If Phase 2 profiling shows it needs more, or you switch to                 │
+# │ `allenai/specter2_base` (~1-2 GB RSS), bump `paper-radar-daily` to         │
+# │ `standard` — same per-second billing caveat applies. Record the profiled   │
+# │ peak RSS here once measured on the real container.                        │
 # └────────────────────────────────────────────────────────────────────────┘
 
 envVarGroups:
@@ -47,7 +52,7 @@ services:
     name: paper-radar-daily
     runtime: python
     region: ohio
-    plan: starter                    # PLACEHOLDER — see header box
+    plan: starter                     # cron type has no free plan — see header box (per-second billing)
     schedule: "0 3 * * *"            # 03:00 UTC; adjust to config.timezone preference
     buildCommand: "pip install -r worker/requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu"
     startCommand: "python -m worker.run"
@@ -59,7 +64,7 @@ services:
     name: paper-radar-worker-api
     runtime: python
     region: ohio
-    plan: starter                    # model-free; starter is enough
+    plan: free                        # model-free, low traffic — free tier is plenty
     buildCommand: "pip install -r worker/requirements-core.txt"
     startCommand: "uvicorn worker.app:app --host 0.0.0.0 --port $PORT"
     healthCheckPath: /healthz
@@ -73,7 +78,7 @@ services:
     name: paper-radar-bootstrap
     runtime: python
     region: ohio
-    plan: starter
+    plan: starter                     # cron type has no free plan — see header box (per-second billing)
     schedule: "0 0 31 2 *"
     buildCommand: "pip install -r worker/requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu"
     startCommand: "python -m worker.backfill"
