@@ -1,7 +1,16 @@
-# Lean deps for the worker web service (worker.app) — no embedding model.
+# Lean deps for the worker web service (worker.app) — no torch / no local
+# embedding model. numpy/scikit-learn/hdbscan are here (not in the "heavy ML"
+# block of requirements.txt) because clustering itself is cheap on CPU/RAM —
+# it's the neural embedding MODEL (torch + transformer weights) that needed
+# more RAM than the free tier has, not the clustering algorithm. With
+# VOYAGE_API_KEY set (hosted embeddings), both scoring's embedding-similarity
+# signal AND monthly clustering work on Render's free plan.
 httpx>=0.27,<1.0
 feedparser>=6.0.10
 psycopg[binary]>=3.2,<4.0
 fastapi>=0.115,<1.0
 uvicorn[standard]>=0.30
 pydantic>=2.7,<3.0
+numpy>=1.26,<3.0
+scikit-learn>=1.4
+hdbscan>=0.8.36

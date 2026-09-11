@@ -37,13 +37,73 @@ export function BurstList({ bursts }: { bursts: any[] }) {
   if (!bursts?.length) return null;
   return (
     <div className="card">
-      <b style={{ fontSize: 13 }}>Multi-lab bursts</b>
+      <b style={{ fontSize: 13 }}>Multi-lab bursts (tracked terms)</b>
       <div className="row" style={{ marginTop: 6 }}>
         {bursts.map((b) => (
           <span key={b.term} className="pill">
             {b.term} — {b.distinct_groups} groups (was {b.prev_distinct_groups})
           </span>
         ))}
+      </div>
+    </div>
+  );
+}
+
+export function DiscoveryPanel({ discovery }: { discovery: any[] }) {
+  const firstAppearance = (discovery ?? []).filter((d) => d.tier === "first_appearance");
+  const bursting = (discovery ?? []).filter((d) => d.tier === "bursting");
+
+  if (!discovery?.length) {
+    return (
+      <p className="mut">
+        Nothing outside your tracked vocab qualified this week — needs a few weeks of history
+        to build a baseline. This does not mean nothing new happened; it means nothing cleared
+        the "2+ independent groups" bar yet.
+      </p>
+    );
+  }
+  return (
+    <div className="card">
+      <div style={{ marginBottom: 10 }}>
+        <b style={{ fontSize: 13 }}>🆕 First appearance — genuinely new this week</b>
+        <div className="mut" style={{ marginBottom: 6 }}>
+          Zero mentions anywhere in the last 8 weeks, now used by 2+ independent groups. This
+          is the actual "JEPA at 2-3 papers" signal — read this list every week, it will
+          mostly be noise, that is expected.
+        </div>
+        {firstAppearance.length === 0 ? (
+          <span className="mut">none this week</span>
+        ) : (
+          <div className="row">
+            {firstAppearance.map((d) => (
+              <span key={d.term} className="pill" style={{ borderColor: "var(--ok)", color: "var(--ok)" }}
+                    title={`first seen this week, ${d.distinct_groups} independent groups`}>
+                {d.term} · {d.current_count} groups
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+      <div>
+        <b style={{ fontSize: 13 }}>📈 Still bursting — already had some presence</b>
+        <div className="mut" style={{ marginBottom: 6 }}>
+          Rising above its own recent baseline, but not brand new — a later-stage version of
+          the same signal.
+        </div>
+        {bursting.length === 0 ? (
+          <span className="mut">none this week</span>
+        ) : (
+          <div className="row">
+            {bursting.map((d) => (
+              <span key={d.term} className="pill" title={`${d.distinct_groups} groups this week, baseline ${d.baseline_count}`}>
+                {d.term} · Δ+{d.delta} ({d.current_count} groups)
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+      <div className="mut" style={{ marginTop: 8 }}>
+        Add one to your vocab from the config panel below if it looks like a real lead.
       </div>
     </div>
   );

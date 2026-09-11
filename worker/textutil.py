@@ -10,6 +10,8 @@ from __future__ import annotations
 import re
 import unicodedata
 
+from .stopwords import DOMAIN_STOP_BIGRAMS, STOPWORDS
+
 _SURVEY_RE = re.compile(r"\b(survey|review|overview|comprehensive)\b", re.IGNORECASE)
 
 # regex metacharacters that must be neutralised before splicing a term into a
@@ -80,3 +82,17 @@ def word_boundary_match(term: str, text: str) -> bool:
 def matched_terms(terms: list[str], text: str) -> list[str]:
     low = (text or "").lower()
     return [t for t in terms if re.search(r"\b" + escape_term_python(t) + r"\b", low)]
+
+
+def extract_bigrams(text: str) -> list[str]:
+    """Lowercase adjacent-word bigrams, minus stopwords/domain-stop-bigrams and
+    anything too short. Shared by vocab growth (worker.pipeline.vocab),
+    config suggestions, and corpus-wide burst discovery."""
+    words = [w for w in normalize_ws(text).lower().split() if w.isalpha() or "-" in w]
+    grams = [f"{a} {b}" for a, b in zip(words, words[1:])]
+    return [
+        g for g in grams
+        if g not in DOMAIN_STOP_BIGRAMS
+        and not any(part in STOPWORDS for part in g.split())
+        and len(g) >= 8
+    ]

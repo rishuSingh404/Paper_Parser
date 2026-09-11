@@ -33,7 +33,8 @@ def _minmax(values: list[float]) -> callable:
 
 def score_broad(conn: psycopg.Connection, cfg: dict, current_week: str,
                 tracked_terms: list[str]) -> dict:
-    mv = cfg["embedding_model_version"]
+    from ..enrich.embeddings import active_model_version
+    mv = active_model_version(cfg)
     weights = cfg.get("rank_weights") or {}
     gate = cfg.get("recall_gate_thresholds") or {}
     hard_cap = int(gate.get("hard_cap", 60))

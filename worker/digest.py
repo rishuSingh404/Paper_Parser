@@ -48,7 +48,7 @@ def store(conn: psycopg.Connection, run_date: dt.date, mode: str, *, broad: list
 
 def telegram_text(run_date: dt.date, mode: str, *, broad: list[dict], niche: list[dict],
                   rising: list[dict], bursts: list[dict], papers_scanned: int,
-                  dashboard_url: str | None) -> str:
+                  dashboard_url: str | None, unprompted: list[dict] | None = None) -> str:
     lines = [
         f"Paper Radar — {run_date.isoformat()} ({mode})",
         f"scanned {papers_scanned} papers | broad {len(broad)} | niche {len(niche)}",
@@ -60,9 +60,22 @@ def telegram_text(run_date: dt.date, mode: str, *, broad: list[dict], niche: lis
             lines.append(f"  {r['term']}  Δ{r['momentum']:+g}  (now {r['current']})")
         lines.append("")
     if bursts:
-        lines.append("Multi-lab bursts: " + ", ".join(
+        lines.append("Multi-lab bursts (tracked terms): " + ", ".join(
             f"{b['term']} ({b['distinct_groups']} groups)" for b in bursts[:6]))
         lines.append("")
+    if unprompted:
+        fa = [u for u in unprompted if u.get("tier") == "first_appearance"]
+        bu = [u for u in unprompted if u.get("tier") == "bursting"]
+        if fa:
+            lines.append("🆕 First appearance (genuinely new this week, read even though it's mostly noise):")
+            for u in fa[:8]:
+                lines.append(f"  {u['term']}  {u['distinct_groups']} groups")
+            lines.append("")
+        if bu:
+            lines.append("📈 Still bursting (not brand new, but rising outside your vocab):")
+            for u in bu[:6]:
+                lines.append(f"  {u['term']}  {u['distinct_groups']} groups  Δ{u['delta']:+g}")
+            lines.append("")
     if broad:
         lines.append("Broad sweep (top 5):")
         for c in broad[:5]:

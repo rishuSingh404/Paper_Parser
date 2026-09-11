@@ -30,7 +30,8 @@ def niche_feed(conn: psycopg.Connection, cfg: dict, *, days: int = 14, limit: in
     phrases = niche_phrases(cfg)
     if not phrases:
         return []
-    mv = cfg["embedding_model_version"]
+    from ..enrich.embeddings import active_model_version
+    mv = active_model_version(cfg)
 
     rows = db.q(
         conn,

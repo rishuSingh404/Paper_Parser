@@ -34,6 +34,13 @@ export async function getState() {
      FROM run_log ORDER BY id DESC LIMIT 8`,
   );
 
+  const discovery = await q<any>(
+    `SELECT term, tier, current_count, baseline_count, delta, distinct_groups
+     FROM discovery_bursts
+     WHERE run_date = (SELECT max(run_date) FROM discovery_bursts)
+     ORDER BY (tier = 'first_appearance') DESC, delta DESC LIMIT 30`,
+  );
+
   const working = await q<any>(
     `WITH cards AS (
        SELECT run_date, outcome,
@@ -61,6 +68,7 @@ export async function getState() {
     vocab,
     config,
     suggestions,
+    discovery,
     runs,
     working: working.map((w) => {
       const judged = Number(w.liked) + Number(w.disliked) + Number(w.ignored);

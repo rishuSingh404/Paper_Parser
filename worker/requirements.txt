@@ -1,23 +1,26 @@
-# Paper Radar worker.
+# Paper Radar worker — FULL stack (self-hosted embeddings via sentence-transformers).
 #
-# The web service (worker.app) needs only the "core" block. The daily Cron Job
-# and the bootstrap Job additionally need the "ML" block for embeddings +
-# clustering; if the ML block is absent those steps log a skip and the pipeline
-# runs lexical-only. Keep the web service image lean by installing core only
-# there (see render.yaml build commands).
+# Default deploy uses worker/requirements-core.txt instead (see render.yaml):
+# hosted embeddings via Voyage AI (VOYAGE_API_KEY) need no local model, so
+# numpy/scikit-learn/hdbscan already live in -core.txt and clustering works
+# there too. Only reach for THIS file if you want to self-host the embedding
+# model instead of using Voyage — e.g. no external API calls at all, or a
+# model Voyage doesn't offer (allenai/specter2_base). That needs real RAM
+# (~400 MB+ for all-MiniLM-L6-v2, ~1-2 GB for specter2_base) — a paid Render
+# plan, not the free tier. See the Cost note in render.yaml.
 
-# --- core ---
+# --- core (same as requirements-core.txt) ---
 httpx>=0.27,<1.0
 feedparser>=6.0.10
 psycopg[binary]>=3.2,<4.0
 fastapi>=0.115,<1.0
 uvicorn[standard]>=0.30
 pydantic>=2.7,<3.0
-
-# --- ML (embeddings + clustering); vectors are stored as REAL[], no pgvector ---
 numpy>=1.26,<3.0
 scikit-learn>=1.4
 hdbscan>=0.8.36
+
+# --- self-hosted embedding model ---
 sentence-transformers>=3.0
 # torch is pulled in by sentence-transformers; on Render add the CPU index:
 #   pip install -r worker/requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu

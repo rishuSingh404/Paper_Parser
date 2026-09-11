@@ -140,6 +140,22 @@ CREATE TABLE term_bursts (
   PRIMARY KEY (term, iso_week)
 );
 
+-- Corpus-wide burst detection for terms NOT YET in `vocab` (plan gap: catching
+-- "a technique is trending in a domain I don't track yet", e.g. the
+-- MedJEPA-Critic origin story — JEPA trending elsewhere, before it was a
+-- tracked term). Recomputed fresh each run (worker/pipeline/discovery.py);
+-- old rows for run_date are replaced, not accumulated.
+CREATE TABLE discovery_bursts (
+  run_date        DATE NOT NULL,
+  term            TEXT NOT NULL,
+  tier            TEXT NOT NULL CHECK (tier IN ('first_appearance','bursting')),
+  current_count   INT NOT NULL,
+  baseline_count  REAL NOT NULL,
+  delta           REAL NOT NULL,
+  distinct_groups INT NOT NULL,
+  PRIMARY KEY (run_date, term)
+);
+
 -- Weekly total papers per category — denominator for term_counts.category_share.
 CREATE TABLE category_volume (
   iso_week TEXT NOT NULL,

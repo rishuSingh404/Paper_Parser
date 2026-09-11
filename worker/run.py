@@ -19,7 +19,7 @@ from .ingest.base import upsert_paper
 from .ingest.registry import enabled_generic
 from .isoweek import current_iso_week
 from .observability import RunLog, check_and_alert_staleness
-from .pipeline import cluster, momentum, niche, score, suggestions, vocab
+from .pipeline import cluster, discovery, momentum, niche, score, suggestions, vocab
 from .pipeline import terms as term_counts
 
 BROAD_MAX = settings.DAILY_BROAD_MAX_RESULTS
@@ -143,14 +143,21 @@ def run_daily(kind: str = "daily") -> dict:
             except Exception as exc:
                 rlog.error("enrich:citations", exc)
             try:
-                rlog.stat("embed_papers", embeddings.embed_new_papers(conn, cfg["embedding_model_version"]))
-                rlog.stat("embed_anchors", embeddings.embed_anchors(conn, cfg))
+                rlog.stat("embed_papers", embeddings.embed_new_papers(
+                    conn, cfg["embedding_model_version"], on_call=on_call))
+                rlog.stat("embed_anchors", embeddings.embed_anchors(conn, cfg, on_call=on_call))
             except Exception as exc:
                 rlog.error("enrich:embeddings", exc)
 
             # ---- steps 5-12: signals + scoring ------------------------------
             rising = momentum.rising_terms(conn, tracked, week)
             bursts = momentum.bursts(conn, tracked, week, cfg["burst_min_groups"])
+            try:
+                unprompted = discovery.scan_corpus_bursts(conn, week)
+            except Exception as exc:
+                rlog.error("discovery", exc)
+                unprompted = []
+            rlog.stat("discovery_bursts", len(unprompted))
             broad = score.score_broad(conn, cfg, week, tracked)
             niche_feed = niche.niche_feed(conn, cfg)
             try:
@@ -183,7 +190,7 @@ def run_daily(kind: str = "daily") -> dict:
         # ---- step 16: deliver -----------------------------------------------
         text = digest.telegram_text(
             today, cfg["digest_mode"], broad=broad["cards"], niche=niche_feed,
-            rising=rising, bursts=bursts, papers_scanned=len(seen),
+            rising=rising, bursts=bursts, unprompted=unprompted, papers_scanned=len(seen),
             dashboard_url=settings.DASHBOARD_URL or None,
         )
         rlog.stat("telegram", telegram.send(text))

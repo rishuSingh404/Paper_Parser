@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import {
-  BroadCard, BurstList, ClusterRollup, NicheCard, RisingTerms,
+  BroadCard, BurstList, ClusterRollup, DiscoveryPanel, NicheCard, RisingTerms,
   RunLogViewer, StalenessBanner, VocabPanel, WorkingPanel,
 } from "@/components/panels";
 import { ConfigPanel } from "@/components/ConfigPanel";
@@ -48,6 +48,9 @@ export default function Page() {
       <h2>Rising terms {d ? `(${d.rising_terms?.length ?? 0})` : ""}</h2>
       <RisingTerms terms={d?.rising_terms ?? []} />
       <BurstList bursts={d?.bursts ?? []} />
+
+      <h2>🔭 What's emerging, unprompted</h2>
+      <DiscoveryPanel discovery={state.discovery ?? []} />
 
       <h2>Broad sweep ({broad.length}){d?.broad_ranked_truncated_at ? ` · truncated at ${d.broad_ranked_truncated_at}` : ""}</h2>
       {broad.length === 0 && <p className="mut">Quiet week — nothing cleared the recall gate. That is a valid output.</p>}

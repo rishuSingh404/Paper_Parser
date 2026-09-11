@@ -21,6 +21,13 @@ CORE_API_KEY = os.environ.get("CORE_API_KEY", "")
 CROSSREF_MAILTO = os.environ.get("CROSSREF_MAILTO", "")
 SEMANTIC_SCHOLAR_API_KEY = os.environ.get("SEMANTIC_SCHOLAR_API_KEY", "")
 
+# Hosted embeddings (preferred — works on the free Render tier, no local RAM
+# needed). Voyage AI has a 200M-token one-time free grant, which covers this
+# system's volume for years. Self-hosted sentence-transformers is the fallback
+# when this is unset and the ML deps happen to be installed (worker/requirements.txt).
+VOYAGE_API_KEY = os.environ.get("VOYAGE_API_KEY", "")
+VOYAGE_MODEL = os.environ.get("VOYAGE_MODEL", "voyage-4-lite")
+
 # arXiv politeness (do NOT lower the interval — a shared IP gets throttled fast)
 ARXIV_MIN_INTERVAL_SECONDS = float(os.environ.get("ARXIV_MIN_INTERVAL_SECONDS", "3.0"))
 ARXIV_MAX_RETRIES = int(os.environ.get("ARXIV_MAX_RETRIES", "5"))

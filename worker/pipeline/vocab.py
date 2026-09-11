@@ -10,8 +10,7 @@ import psycopg
 
 from .. import db
 from ..isoweek import weeks_between
-from ..stopwords import DOMAIN_STOP_BIGRAMS, STOPWORDS
-from ..textutil import normalize_ws
+from ..textutil import extract_bigrams as _bigrams  # re-exported for suggestions.py
 
 MAX_LEARNED_VOCAB = 200
 MAX_ADDS_PER_RUN = 6
@@ -41,17 +40,6 @@ def prune(conn: psycopg.Connection, cfg: dict, current_week: str) -> list[str]:
     if doomed:
         db.execute(conn, "DELETE FROM vocab WHERE term = ANY(%s)", (doomed,))
     return doomed
-
-
-def _bigrams(text: str) -> list[str]:
-    words = [w for w in normalize_ws(text).lower().split() if w.isalpha() or "-" in w]
-    grams = [f"{a} {b}" for a, b in zip(words, words[1:])]
-    return [
-        g for g in grams
-        if g not in DOMAIN_STOP_BIGRAMS
-        and not any(part in STOPWORDS for part in g.split())
-        and len(g) >= 8
-    ]
 
 
 def grow_from_feedback(conn: psycopg.Connection) -> dict:

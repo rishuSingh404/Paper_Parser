@@ -11,13 +11,20 @@
 # scheduled GitHub Actions workflow instead — see .github/workflows/daily.yml
 # and .github/workflows/bootstrap.yml.
 #
-# Trade-off: this service runs worker/requirements-core.txt (no torch /
-# sentence-transformers / hdbscan) so it fits comfortably in the free tier's
-# 512 MB RAM. Embeddings and HDBSCAN clustering are skipped as a result —
-# scoring still runs on lexical + co-citation + HF-upvote signals. To get
-# embeddings back: switch buildCommand to worker/requirements.txt and bump
-# `plan` to a paid tier with more RAM (a card is unavoidable at that point,
-# since it's a genuinely paid plan, not a billing quirk).
+# Embeddings run via the Voyage AI hosted API (VOYAGE_API_KEY below) — one
+# HTTP call, no local model, so worker/requirements-core.txt (no torch /
+# sentence-transformers) fits comfortably in the free tier's 512 MB RAM, and
+# clustering (numpy/scikit-learn/hdbscan — cheap on CPU, it's the neural
+# embedding MODEL that needed RAM, not the clustering algorithm) works too.
+# Voyage's 200M-token free grant covers years of this system's volume — see
+# https://inferencehub.org/providers/voyage-ai. Without VOYAGE_API_KEY, both
+# embeddings and clustering are skipped and scoring runs lexical +
+# co-citation + HF-upvote only.
+#
+# To self-host the embedding model instead (no external API calls at all):
+# switch buildCommand to worker/requirements.txt and bump `plan` to a paid
+# tier with more RAM — a card is unavoidable at that point since it's a
+# genuinely paid compute plan, not a billing quirk. See the Cost note there.
 #
 # All requests to Neon go over the public internet from wherever Render places
 # this service — pin `region: ohio` to match Neon's `aws-us-east-2` project
@@ -44,6 +51,8 @@ envVarGroups:
         sync: false
       - key: SEMANTIC_SCHOLAR_API_KEY
         sync: false
+      - key: VOYAGE_API_KEY
+        sync: false                  # hosted embeddings — see the note above
 
 services:
   - type: web

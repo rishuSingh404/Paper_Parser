@@ -10,8 +10,8 @@ import psycopg
 from psycopg.types.json import Json
 
 from .. import db
+from ..textutil import extract_bigrams as _bigrams
 from .niche import niche_phrases
-from .vocab import _bigrams
 
 
 def refresh(conn: psycopg.Connection, cfg: dict, *, min_docs: int = 2) -> dict:

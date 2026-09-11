@@ -38,8 +38,9 @@ def _key(period: str, members: list[str]) -> str:
 def cluster_recent(conn: psycopg.Connection, cfg: dict, *, period: str | None = None,
                    days: int = 30, min_cluster_size: int = 4) -> dict:
     if not AVAILABLE:
-        return {"skipped": "no ML deps"}
-    mv = cfg["embedding_model_version"]
+        return {"skipped": "no ML deps (numpy/scikit-learn/hdbscan)"}
+    from ..enrich.embeddings import active_model_version
+    mv = active_model_version(cfg)
     period = period or dt.date.today().strftime("%Y-%m")
 
     rows = db.q(
