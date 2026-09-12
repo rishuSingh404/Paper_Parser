@@ -1,0 +1,134 @@
+"use client";
+import { useCallback, useEffect, useState } from "react";
+
+const fmtDate = (d: string | null) => (d ? String(d).slice(0, 10) : "?");
+
+export function SearchPanel() {
+  const [searches, setSearches] = useState<any[]>([]);
+  const [phrase, setPhrase] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+  const [loaded, setLoaded] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      const res = await fetch("/api/searches", { cache: "no-store" });
+      const data = await res.json();
+      setSearches(data.searches ?? []);
+    } catch {
+      // quiet — this panel is additive, don't block the rest of the dashboard
+    } finally {
+      setLoaded(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const add = async () => {
+    if (!phrase.trim()) return;
+    setBusy(true);
+    setMsg("searching arXiv + your corpus…");
+    try {
+      const res = await fetch("/api/searches", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ phrase: phrase.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setMsg(`✗ ${data.error ?? "failed"}`);
+      } else {
+        setMsg(`✓ found ${data.total} paper(s) so far — historical backfill running in the background, check back in a few minutes for more`);
+        setPhrase("");
+        await load();
+      }
+    } catch (e: any) {
+      setMsg(`✗ ${e?.message ?? "failed"}`);
+    }
+    setBusy(false);
+  };
+
+  const remove = async (id: number) => {
+    await fetch(`/api/searches?id=${id}`, { method: "DELETE" });
+    await load();
+  };
+
+  return (
+    <div className="card">
+      <div className="mut" style={{ marginBottom: 8 }}>
+        Type a plain description of a sub-area you're working in — not arXiv
+        syntax, just words (e.g. "ECG signal hallucination detection"). This
+        builds the search for you, pulls the last 12 months of matching
+        papers from arXiv once, and keeps matching new ones from every daily
+        run after that — no need to touch the Niche queries box below.
+      </div>
+      <div className="row">
+        <input
+          placeholder="e.g. ECG signal hallucination detection"
+          value={phrase}
+          onChange={(e) => setPhrase(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && add()}
+          style={{ minWidth: 320 }}
+        />
+        <button className="on" disabled={busy || !phrase.trim()} onClick={add}>
+          {busy ? "searching…" : "Add & search"}
+        </button>
+      </div>
+      {msg && <div className="mut" style={{ marginTop: 6 }}>{msg}</div>}
+
+      {loaded && searches.length === 0 && (
+        <div className="mut" style={{ marginTop: 10 }}>No saved searches yet.</div>
+      )}
+
+      {searches.map((s) => {
+        const transfers = (s.matches ?? []).filter((m: any) => m.possible_transfer);
+        const inField = (s.matches ?? []).filter((m: any) => !m.possible_transfer);
+        return (
+          <div key={s.id} style={{ marginTop: 16, borderTop: "1px solid var(--border, #333)", paddingTop: 10 }}>
+            <div className="row">
+              <b style={{ fontSize: 13.5 }}>{s.label}</b>
+              <span className="pill">{s.total} paper(s)</span>
+              <button onClick={() => remove(s.id)}>remove</button>
+            </div>
+
+            {transfers.length > 0 && (
+              <div style={{ marginTop: 8 }}>
+                <div className="mut" style={{ fontWeight: 600 }}>
+                  🌍 {transfers.length} outside your broader domain — possible transfer into this
+                </div>
+                {transfers.slice(0, 20).map((m: any) => (
+                  <div key={m.paper_id} style={{ fontSize: 12.5, padding: "3px 0" }}>
+                    {fmtDate(m.announce_date)} ·{" "}
+                    {m.link ? <a href={m.link} target="_blank" rel="noreferrer">{m.title}</a> : m.title}
+                    {m.embedding_sim != null && <span className="mut"> · sim {m.embedding_sim}</span>}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {inField.length > 0 && (
+              <div style={{ marginTop: 8 }}>
+                <div className="mut">📍 {inField.length} already in your broader domain (hallucination/safety) — you'd find these anyway</div>
+                {inField.slice(0, 10).map((m: any) => (
+                  <div key={m.paper_id} style={{ fontSize: 12.5, padding: "3px 0", opacity: 0.75 }}>
+                    {fmtDate(m.announce_date)} ·{" "}
+                    {m.link ? <a href={m.link} target="_blank" rel="noreferrer">{m.title}</a> : m.title}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {s.total === 0 && (
+              <div className="mut" style={{ marginTop: 6 }}>
+                Nothing yet — the historical backfill may still be running, or this sub-area
+                genuinely has little on arXiv yet. Check back after the next daily run.
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}

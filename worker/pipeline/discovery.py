@@ -59,8 +59,8 @@ MIN_FIRST_APPEARANCE_COUNT = 2   # Rishu's own calibration point: "2-3 papers"
 MIN_FIRST_APPEARANCE_GROUPS = 2  # independent groups, not one lab's own series
 MIN_BURST_COUNT = 3
 MIN_BURST_GROUPS = 2
-TOP_N_PER_TIER = 15
-RESERVED_ACRONYM_SLOTS = 5  # of TOP_N_PER_TIER, per tier — see _select() docstring
+TOP_N_PER_TIER = 25  # was 15 — Rishu's own read: "still it is less". More room per tier means less gets truncated before it's even seen.
+RESERVED_ACRONYM_SLOTS = 8  # of TOP_N_PER_TIER, per tier — see _select() docstring
 
 
 def _is_acronym_term(term: str) -> bool:

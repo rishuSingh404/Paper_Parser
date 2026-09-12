@@ -64,7 +64,15 @@ _CANDIDATE_UNIVERSE_CAP = 1000  # lowered from 2500 (2026-09-11): the worker run
 # alone announces roughly that many across these categories per day) and cuts
 # this step's peak footprint well below what 2500 was costing.
 SIGNAL_NAMES = ("embedding_sim", "lexical", "concept_overlap", "cocitation_velocity", "hf_upvotes")
-CROSS_DOMAIN_CAP = 20
+CROSS_DOMAIN_CAP = 35  # was 20 — Rishu's own read: "still it is less". This is a display
+# cap only, never a gate (every candidate here already cleared the recall gate on some
+# signal); more room means fewer genuinely non-domain candidates get truncated before
+# being seen. The deeper lever is the embedding backlog (~4600 of ~4900 papers unembedded
+# as of 2026-09-12 — Voyage's no-card 3RPM limit caps the daily catch-up rate) — most
+# cross_domain cards right now rank on lexical/citation signals with embedding_sim=None,
+# not true structural similarity; a Voyage payment method (no minimum deposit, same $0
+# real cost against the 200M free-token grant) raises that to 2000 RPM and is the real
+# fix for ranking QUALITY here, this cap only affects how many get shown.
 
 
 def _minmax(values: list[float]) -> callable:

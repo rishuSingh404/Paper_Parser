@@ -5,6 +5,7 @@ import {
   RisingTerms, RunLogViewer, StalenessBanner, VocabPanel, WorkingPanel,
 } from "@/components/panels";
 import { ConfigPanel } from "@/components/ConfigPanel";
+import { SearchPanel } from "@/components/SearchPanel";
 
 export default function Page() {
   const [state, setState] = useState<any>(null);
@@ -45,6 +46,9 @@ export default function Page() {
       <div style={{ marginTop: 12 }}>
         <StalenessBanner s={state.staleness} />
       </div>
+
+      <h2>🔍 Search my domain</h2>
+      <SearchPanel />
 
       <h2>Rising terms {d ? `(${d.rising_terms?.length ?? 0})` : ""}</h2>
       <RisingTerms terms={d?.rising_terms ?? []} />

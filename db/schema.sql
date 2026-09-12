@@ -295,6 +295,33 @@ CREATE INDEX term_backfills_open_idx ON term_backfills (status)
   WHERE status IN ('pending','partial');
 
 -- ---------------------------------------------------------------------------
+-- Saved searches — self-service "search my domain" from the dashboard.
+--
+-- Separate from niche_queries on purpose. niche_queries + niche_phrases()
+-- feed the strict `in_domain` classifier (score.py) — deliberately narrow,
+-- since being too loose there (a bare "vision-language") wrongly marks
+-- cross-domain papers as "already your field". A saved search is the
+-- opposite intent: broad recall over a plain-language description ("ECG
+-- signal hallucination detection"), re-matched against the full corpus live
+-- on every dashboard load (query-time, not a fixed snapshot) — a genuinely
+-- new arXiv paper ingested by the regular daily sweep shows up here the next
+-- time the dashboard is opened, no separate backend job needed. `words` is
+-- the AND-matched significant-word set extracted from `phrase` (mirrors the
+-- arXiv query built at creation time); `arxiv_query` is that same query,
+-- kept so the one-time historical backfill triggered on creation is
+-- reproducible/auditable.
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE saved_searches (
+  id           BIGSERIAL PRIMARY KEY,
+  label        TEXT NOT NULL,
+  phrase       TEXT NOT NULL,
+  words        TEXT[] NOT NULL DEFAULT '{}',
+  arxiv_query  TEXT NOT NULL,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- ---------------------------------------------------------------------------
 -- Observability
 -- ---------------------------------------------------------------------------
 
