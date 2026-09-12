@@ -10,6 +10,7 @@ import psycopg
 
 from .. import db
 from ..isoweek import weeks_between
+from ..textutil import extract_acronym_candidates as _acronyms
 from ..textutil import extract_bigrams as _bigrams  # re-exported for suggestions.py
 
 MAX_LEARNED_VOCAB = 200
@@ -43,8 +44,10 @@ def prune(conn: psycopg.Connection, cfg: dict, current_week: str) -> list[str]:
 
 
 def grow_from_feedback(conn: psycopg.Connection) -> dict:
-    """For each unprocessed 'liked' paper, mine bigrams; a bigram enters vocab at
-    weight 1.0 if it appears in >=2 liked papers this batch, else 0.4. Cap adds."""
+    """For each unprocessed 'liked' paper, mine bigrams AND acronym/coinage-shaped
+    tokens (JEPA, LoRA, ... — a single-word coinage never forms a stable bigram,
+    see textutil.extract_acronym_candidates); either enters vocab at weight 1.0
+    if it appears in >=2 liked papers this batch, else 0.4. Cap adds."""
     likes = db.q(
         conn,
         "SELECT f.paper_id, p.title, p.abstract FROM feedback f JOIN papers p "
@@ -59,7 +62,9 @@ def grow_from_feedback(conn: psycopg.Connection) -> dict:
 
     doc_freq: dict[str, int] = {}
     for lk in likes:
-        for g in set(_bigrams(f"{lk['title']} {lk['abstract'] or ''}")):
+        raw_text = f"{lk['title']} {lk['abstract'] or ''}"
+        terms = set(_bigrams(raw_text)) | set(_acronyms(raw_text))
+        for g in terms:
             doc_freq[g] = doc_freq.get(g, 0) + 1
 
     candidates = sorted(

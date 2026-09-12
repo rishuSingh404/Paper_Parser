@@ -67,6 +67,24 @@ DOMAIN_STOP_BIGRAMS: frozenset[str] = frozenset({
     "propose novel", "introduce novel", "present novel",
 })
 
+# Acronym/coinage-shaped tokens (ALL-CAPS or CamelCase, e.g. "JEPA", "LoRA")
+# that are already so generic/ubiquitous across ML and medical-imaging papers
+# that flagging them as a "novel term" would be pure noise — the opposite of
+# the boilerplate bigrams above, but the same idea: a small, reviewed,
+# extensible denylist, not an attempt at exhaustive precision. See
+# textutil.extract_acronym_candidates().
+ACRONYM_STOPWORDS: frozenset[str] = frozenset({
+    "ai", "ml", "nlp", "llm", "llms", "vlm", "vlms", "api", "apis", "gpu",
+    "gpus", "cpu", "cpus", "tpu", "tpus", "ram", "id", "ids", "iou", "sota",
+    "roc", "auc", "fid", "psnr", "ssim", "cnn", "cnns", "rnn", "rnns",
+    "lstm", "lstms", "gan", "gans", "vae", "vaes", "gpt", "bert", "url",
+    "urls", "html", "json", "csv", "pdf", "http", "https", "usa", "us",
+    "uk", "eu", "iid", "ood", "rl", "cv", "os", "ui", "ux", "faq", "faqs",
+    "todo", "eda", "svm", "svms", "knn", "pca", "mlp", "mlps", "relu",
+    "sgd", "adam", "bleu", "rouge", "meteor", "rest", "sql", "mri", "ct",
+    "pet", "ecg", "eeg", "icu", "er", "who", "fda",
+})
+
 
 def content_tokens(text: str) -> set[str]:
     """lowercase words len>=4, minus STOPWORDS (spec 4.3 token_set)."""

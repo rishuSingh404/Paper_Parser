@@ -28,9 +28,20 @@ him every week, short enough to actually read. That's the two tiers below.
 
 Deterministic, no LLM: bigram extraction + momentum-style deltas, same
 building blocks used elsewhere, applied to the whole broad-track corpus
-instead of a fixed term list. Computed ad hoc each run (most candidate
-bigrams are noise and don't deserve a permanent row); only the surfaced
-top-N per tier land in `discovery_bursts`.
+instead of a fixed term list. Computed ad hoc each run (most candidates
+are noise and don't deserve a permanent row); only the surfaced top-N per
+tier land in `discovery_bursts`.
+
+**Bigrams alone structurally cannot catch JEPA.** A single-word acronym never
+forms a stable two-word key — "JEPA" fragments across "jepa architecture",
+"novel jepa", "using jepa", each a different bigram, none individually
+crossing the count/group thresholds no matter how many papers use the term.
+This was bigram-only for a while and would have missed the exact case it was
+built to catch. Fixed: also extract acronym/coinage-shaped tokens (ALL-CAPS
+or CamelCase — "JEPA", "LoRA", "MedJEPA") from the original-case text via
+textutil.extract_acronym_candidates(), merged into the same term set bigrams
+feed into, so a single-word coinage gets tracked through the identical
+first_appearance/bursting logic as a multi-word phrase.
 """
 from __future__ import annotations
 
@@ -41,7 +52,7 @@ import psycopg
 
 from .. import db
 from ..isoweek import iso_week, recent_weeks
-from ..textutil import extract_bigrams
+from ..textutil import extract_acronym_candidates, extract_bigrams
 
 DEFAULT_LOOKBACK_WEEKS = 8
 MIN_FIRST_APPEARANCE_COUNT = 2   # Rishu's own calibration point: "2-3 papers"
@@ -83,7 +94,11 @@ def scan_corpus_bursts(
     for r in rows:
         if not r["wk"]:
             continue
-        grams = set(extract_bigrams(f"{r['title']} {r['abstract'] or ''}"))
+        raw_text = f"{r['title']} {r['abstract'] or ''}"
+        # bigrams catch multi-word phrases ("world model"); acronym candidates
+        # catch single-word coinages a bigram scan structurally can't
+        # ("JEPA") — see extract_acronym_candidates() docstring.
+        grams = set(extract_bigrams(raw_text)) | set(extract_acronym_candidates(raw_text))
         group = r["first_author_group"] or f"anon:{r['title'][:40]}"
         for g in grams:
             if g in tracked:

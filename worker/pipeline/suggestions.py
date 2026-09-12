@@ -1,8 +1,10 @@
 """Deterministic config suggestions (plan step 15). NO auto-apply.
 
-Bigrams frequent across liked papers that are absent from BOTH `vocab` and the
-`niche_queries` phrases -> written to `config_suggestions` (status='pending') for
-the dashboard to accept/reject individually.
+Bigrams AND acronym/coinage-shaped tokens (JEPA, LoRA, ... — a single-word
+coinage never forms a stable bigram, see textutil.extract_acronym_candidates)
+frequent across liked papers that are absent from BOTH `vocab` and the
+`niche_queries` phrases -> written to `config_suggestions` (status='pending')
+for the dashboard to accept/reject individually.
 """
 from __future__ import annotations
 
@@ -10,6 +12,7 @@ import psycopg
 from psycopg.types.json import Json
 
 from .. import db
+from ..textutil import extract_acronym_candidates as _acronyms
 from ..textutil import extract_bigrams as _bigrams
 from .niche import niche_phrases
 
@@ -33,7 +36,8 @@ def refresh(conn: psycopg.Connection, cfg: dict, *, min_docs: int = 2) -> dict:
 
     freq: dict[str, int] = {}
     for lk in likes:
-        for g in set(_bigrams(f"{lk['title']} {lk['abstract'] or ''}")):
+        raw_text = f"{lk['title']} {lk['abstract'] or ''}"
+        for g in set(_bigrams(raw_text)) | set(_acronyms(raw_text)):
             if g not in have and g not in pending:
                 freq[g] = freq.get(g, 0) + 1
 

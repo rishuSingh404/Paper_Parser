@@ -10,7 +10,9 @@ from __future__ import annotations
 import re
 import unicodedata
 
-from .stopwords import DOMAIN_STOP_BIGRAMS, STOPWORDS
+from .stopwords import ACRONYM_STOPWORDS, DOMAIN_STOP_BIGRAMS, STOPWORDS
+
+_ACRONYM_RE = re.compile(r"\b(?:[A-Z]{2,6}|[A-Z][a-z]+[A-Z][a-zA-Z0-9]*)\b")
 
 _SURVEY_RE = re.compile(r"\b(survey|review|overview|comprehensive)\b", re.IGNORECASE)
 
@@ -96,3 +98,33 @@ def extract_bigrams(text: str) -> list[str]:
         and not any(part in STOPWORDS for part in g.split())
         and len(g) >= 8
     ]
+
+
+def extract_acronym_candidates(text: str) -> list[str]:
+    """Tokens shaped like a just-coined method/technique name — ALL-CAPS
+    acronyms ("JEPA", "DPO", "RLHF") or CamelCase coinages ("LoRA",
+    "MedJEPA") — pulled from the ORIGINAL-case text, before any lowercasing.
+
+    Why this exists, separate from extract_bigrams(): a single-word acronym
+    never forms a stable bigram. "JEPA" fragments across "jepa architecture",
+    "novel jepa", "using jepa", "the jepa" — different two-word keys every
+    time, none of which individually accumulates enough count or distinct
+    groups to cross the discovery thresholds, no matter how many papers
+    actually use the term. Corpus-wide discovery (worker.pipeline.discovery)
+    was bigram-only and would have missed Rishu's own JEPA example — the
+    exact case it was built to catch — because JEPA IS this shape. This
+    catches it directly instead of hoping a multi-word phrase forms around it.
+
+    Returns lowercased tokens (for consistent aggregation with bigrams), each
+    checked against ACRONYM_STOPWORDS in its ORIGINAL case-insensitive form —
+    a small, reviewed, extensible denylist of acronyms too generic/ubiquitous
+    across ML and medical-imaging papers to mean anything ("LLM", "MRI", "AI",
+    ...), not an attempt at exhaustive precision. Noise here is expected and
+    acceptable, same as extract_bigrams() — a human reads this list."""
+    out = []
+    for m in _ACRONYM_RE.finditer(text or ""):
+        low = m.group(0).lower()
+        if low in ACRONYM_STOPWORDS or len(low) < 3:
+            continue
+        out.append(low)
+    return out
