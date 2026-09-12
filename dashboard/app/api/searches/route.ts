@@ -20,8 +20,7 @@ function cosine(a: number[], b: number[]): number {
   return dot / (Math.sqrt(na) * Math.sqrt(nb));
 }
 
-async function liveMatches(words: string[], phrase: string) {
-  if (words.length === 0) return [];
+async function liveMatches(words: string[], phrase: string, extraIds: string[] = []) {
   const conds: string[] = [];
   const params: string[] = [];
   let i = 1;
@@ -29,16 +28,26 @@ async function liveMatches(words: string[], phrase: string) {
     conds.push(`(title || ' ' || COALESCE(abstract,'')) ~* $${i++}`);
     params.push(wordBoundaryPattern(w));
   }
+  const localFilter = conds.length ? `(${conds.join(" AND ")})` : "FALSE";
+  // extraIds: papers the one-time historical backfill found via arXiv's own
+  // relevance search but that don't pass the stricter local AND-filter (e.g.
+  // "ECG-WM" and "CARE-ECG" are squarely DGT-relevant but never literally say
+  // "hallucination") — shown once, tagged distinctly, so the first result set
+  // isn't quietly thinner than what was actually found. Ongoing daily-sweep
+  // papers still go through the stricter filter only (extraIds is a one-time
+  // top-up, not a growing allowlist).
   const rows = await q<any>(
-    `SELECT paper_id, title, abstract, link, announce_date, first_seen_at, categories
+    `SELECT paper_id, title, abstract, link, announce_date, first_seen_at, categories,
+            ${localFilter} AS matched_locally
      FROM papers
      WHERE NOT muted AND (
-       (${conds.join(" AND ")})
+       ${localFilter}
        OR (title || ' ' || COALESCE(abstract,'')) ILIKE $${i}
+       OR paper_id = ANY($${i + 1})
      )
      ORDER BY COALESCE(announce_date, first_seen_at::date) DESC
      LIMIT 150`,
-    [...params, `%${phrase.trim()}%`],
+    [...params, `%${phrase.trim()}%`, extraIds],
   );
   return rows;
 }
@@ -151,7 +160,10 @@ export async function POST(req: NextRequest) {
   }
 
   const cfg = await q1<any>(`SELECT niche_queries FROM config WHERE id = 1`);
-  const rows = await liveMatches(words, phrase);
+  const backfilledIds: string[] = Array.isArray(backfill?.papers)
+    ? backfill.papers.map((p: any) => p.paper_id).filter(Boolean)
+    : [];
+  const rows = await liveMatches(words, phrase, backfilledIds);
   const tagged = await tagCrossDomain(rows, cfg);
 
   return NextResponse.json({ ok: true, search: row, backfill, matches: tagged, total: tagged.length });

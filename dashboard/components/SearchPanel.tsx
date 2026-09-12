@@ -103,6 +103,11 @@ export function SearchPanel() {
                     {fmtDate(m.announce_date)} ·{" "}
                     {m.link ? <a href={m.link} target="_blank" rel="noreferrer">{m.title}</a> : m.title}
                     {m.embedding_sim != null && <span className="mut"> · sim {m.embedding_sim}</span>}
+                    {!m.matched_locally && (
+                      <span className="mut" title="Found via arXiv's own relevance search on the initial add, not a literal word match — doesn't use your exact search words but arXiv judged it relevant">
+                        {" "}· found via arXiv search, not exact words
+                      </span>
+                    )}
                   </div>
                 ))}
               </div>
