@@ -60,6 +60,31 @@ MIN_FIRST_APPEARANCE_GROUPS = 2  # independent groups, not one lab's own series
 MIN_BURST_COUNT = 3
 MIN_BURST_GROUPS = 2
 TOP_N_PER_TIER = 15
+RESERVED_ACRONYM_SLOTS = 5  # of TOP_N_PER_TIER, per tier — see _select() docstring
+
+
+def _is_acronym_term(term: str) -> bool:
+    # A bigram always joins two words with a space; extract_acronym_candidates
+    # never does. This alone tells the two apart downstream with no extra state.
+    return " " not in term
+
+
+def _select(cands: list[dict], sort_key, top_n: int, reserved_acronym: int) -> list[dict]:
+    """Top-N by sort_key, but with RESERVED_ACRONYM_SLOTS of it set aside for
+    single-word/acronym candidates specifically. Generic academic bigram noise
+    ("high resolution", "results indicate") is high-volume enough on any given
+    day to fill all TOP_N_PER_TIER slots on count/delta alone, which would
+    silently push out the very signal this whole fix was for — a real
+    single-word coinage (JEPA-shaped) is comparatively rare and can lose a
+    pure numeric ranking against a flood of common two-word phrases even
+    though it's exactly the more interesting one. Reserving slots means an
+    acronym candidate that clears the tier's threshold always gets shown,
+    not just when it happens to also outrank the bigram noise."""
+    acro = [c for c in cands if _is_acronym_term(c["term"])]
+    phrase = [c for c in cands if not _is_acronym_term(c["term"])]
+    picked_acro = acro[:reserved_acronym]
+    picked_phrase = phrase[:top_n - len(picked_acro)]
+    return sorted(picked_acro + picked_phrase, key=sort_key)
 
 
 def scan_corpus_bursts(
@@ -135,7 +160,10 @@ def scan_corpus_bursts(
 
     first_appearance.sort(key=lambda c: -c["current"])
     bursting.sort(key=lambda c: -c["delta"])
-    top = first_appearance[:top_n_per_tier] + bursting[:top_n_per_tier]
+    top = (
+        _select(first_appearance, lambda c: -c["current"], top_n_per_tier, RESERVED_ACRONYM_SLOTS)
+        + _select(bursting, lambda c: -c["delta"], top_n_per_tier, RESERVED_ACRONYM_SLOTS)
+    )
 
     run_date = dt.date.today()
     db.execute(conn, "DELETE FROM discovery_bursts WHERE run_date = %s", (run_date,))
