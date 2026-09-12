@@ -32,20 +32,17 @@ VOYAGE_MODEL = os.environ.get("VOYAGE_MODEL", "voyage-4-lite")
 # real cost, a card only raises the rate ceiling, not what's billed), this can
 # go up to a few thousand and clear the backlog in well under a minute.
 #
-# Defaults to 96 (one batch) — the safe no-card-tier value — because this was
-# raised prematurely once already (2026-09-12) on Rishu's word that he'd added
-# a card, without actually verifying it server-side first, and a production
-# run promptly ate 5 real 429s and failed. Voyage's own error body was
-# unambiguous: {"detail": "You have not yet added your payment method... you
-# should see your rate limits increase after several minutes"} — so either it
-# hadn't propagated yet or the billing setup didn't fully complete. Don't
-# trust "I added the card" or a small (~3-request) test alone — 3 requests
-# fits inside the free tier's own 3RPM ceiling either way, so it can't
-# distinguish the two tiers. VERIFY with a real ~96-paper batch (the size that
-# actually exercises the limit) before raising this again — see the
-# diagnostic script pattern used to catch this, in worker/enrich/embeddings.py's
-# embed_new_papers() comment.
-VOYAGE_MAX_PER_RUN = int(os.environ.get("VOYAGE_MAX_PER_RUN", "96"))
+# Was stuck at 96 (one batch, the safe no-card value) for a bit: raising it
+# on "I added a card" alone turned out to be premature TWICE — first because a
+# 3-request test can't distinguish the tiers (fits inside the free 3RPM
+# ceiling either way), second because the card was on file but not set as
+# Voyage's DEFAULT payment method, and Voyage's rate-limit upgrade apparently
+# keys off the default, not just "a card exists on the org". Confirmed fixed
+# 2026-09-12 with the test that actually matters: a real 96-paper / ~32K-token
+# batch request (the size that exercises the limit) returned a clean 200
+# after Rishu set the card as default. If this ever regresses, re-run that
+# exact check before touching this value — a small request proves nothing.
+VOYAGE_MAX_PER_RUN = int(os.environ.get("VOYAGE_MAX_PER_RUN", "5000"))
 
 # arXiv politeness (do NOT lower the interval — a shared IP gets throttled fast)
 ARXIV_MIN_INTERVAL_SECONDS = float(os.environ.get("ARXIV_MIN_INTERVAL_SECONDS", "3.0"))

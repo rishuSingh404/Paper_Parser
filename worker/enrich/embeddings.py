@@ -111,16 +111,11 @@ def embed_new_papers(conn: psycopg.Connection, model_version: str, *, limit: int
         # A payment method (still $0 real cost — a card only raises the rate
         # ceiling, Voyage still bills against the 200M free-token grant either
         # way) takes this from 3 RPM/10K TPM to 2000 RPM/16M TPM, at which
-        # point the whole backlog clears in well under a minute and this cap
-        # is pure waste. Rishu said he'd added one (2026-09-12) — DON'T trust
-        # that alone: raised this once already on his word plus an
-        # insufficiently-rigorous test (3 requests, which fits inside the
-        # free tier's own ceiling either way) and a real run promptly ate 5
-        # genuine 429s, Voyage's error body explicit that no payment method
-        # was active server-side yet. VOYAGE_MAX_PER_RUN (settings.py) is the
-        # actual control — verify with a real ~96-paper batch first (see that
-        # file's comment for the exact check), then raise it there once
-        # confirmed, not here.
+        # point the whole backlog clears in well under a minute. Confirmed
+        # active 2026-09-12 (settings.py has the full story: needed the card
+        # set as Voyage's DEFAULT payment method, not just present — verified
+        # with a real 96-paper/~32K-token batch request, not a small one).
+        # VOYAGE_MAX_PER_RUN (settings.py) is the actual control.
         limit = min(limit, settings.VOYAGE_MAX_PER_RUN)
     rows = db.q(
         conn,
