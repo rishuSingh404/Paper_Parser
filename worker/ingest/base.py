@@ -66,15 +66,24 @@ _PAPERS_UPSERT = """
         published_date  = LEAST(papers.published_date, EXCLUDED.published_date),
         first_author_group = COALESCE(papers.first_author_group, EXCLUDED.first_author_group),
         -- `categories` is NOT NULL. array_agg() over ZERO input rows returns
-        -- NULL, always — not '{}' — even when both sides being unnested are
-        -- themselves valid, non-null empty arrays (e.g. two hf_daily rows for
-        -- the same paper, which never sets categories). Hit this live in
-        -- production: an hf_daily upsert violated the NOT NULL constraint.
-        -- The outer COALESCE guarantees a real array either way.
+        -- NULL, always, not an empty array, even when both sides being
+        -- unnested are themselves valid, non-null empty arrays (e.g. two
+        -- hf_daily rows for the same paper, which never sets categories).
+        -- Hit this live in production: an hf_daily upsert violated the NOT
+        -- NULL constraint. The outer COALESCE guarantees a real array either
+        -- way. NOTE: this whole template is run through .format(values=...)
+        -- below, so any literal curly brace anywhere in this string —
+        -- including in a comment! — MUST be doubled ({{ then }}) or it is
+        -- parsed as a positional placeholder and crashes every single
+        -- ingest call with "Replacement index 0 out of range". Hit this
+        -- exact bug live, TWICE, once in the SQL literal below and once in
+        -- an earlier draft of this very comment quoting the broken syntax
+        -- unescaped — verify with a real .format() call after editing this
+        -- block, not just visual inspection.
         categories      = COALESCE((
             SELECT array_agg(DISTINCT c)
             FROM unnest(papers.categories || EXCLUDED.categories) AS c
-        ), '{}'),
+        ), '{{}}'),
         is_survey       = papers.is_survey OR EXCLUDED.is_survey
 """
 
