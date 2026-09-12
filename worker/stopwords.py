@@ -83,6 +83,15 @@ ACRONYM_STOPWORDS: frozenset[str] = frozenset({
     "todo", "eda", "svm", "svms", "knn", "pca", "mlp", "mlps", "relu",
     "sgd", "adam", "bleu", "rouge", "meteor", "rest", "sql", "mri", "ct",
     "pet", "ecg", "eeg", "icu", "er", "who", "fda",
+    # venue/conference names and generic eval metrics — these are WHERE or
+    # HOW a technique was published/measured, never the technique itself, so
+    # they must never read as a "novel term" no matter how many groups use
+    # them. Caught live (2026-09-12, Rishu's own read of a real weekly list):
+    # "neurips" (a conference) and "auroc" (a metric) both slipped through as
+    # first_appearance/bursting "signals" — neither means anything as a term.
+    "neurips", "icml", "iclr", "cvpr", "eccv", "iccv", "acl", "emnlp",
+    "naacl", "aaai", "ijcai", "kdd", "www", "sigir", "miccai", "auroc",
+    "auprc", "mrr", "ndcg", "wer", "cer", "mae", "rmse", "mse",
 })
 
 
