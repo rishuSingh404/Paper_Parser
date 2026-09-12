@@ -108,15 +108,19 @@ def embed_new_papers(conn: psycopg.Connection, model_version: str, *, limit: int
         # stuck 24+ minutes past ingestion. That's why this was capped to one
         # batch (96) per run for a while.
         #
-        # Rishu added a payment method 2026-09-12 (still $0 real cost — a card
-        # only raises the rate ceiling, Voyage still bills against the 200M
-        # free-token grant either way): free tier -> 2000 RPM / 16M TPM. At
-        # that ceiling the whole backlog (~4600 papers, ~1.4M tokens) clears
-        # in well under a minute of real request time, so the one-batch cap
-        # is now pure waste. VOYAGE_MAX_PER_RUN (env, default below) governs
-        # this instead — generous enough to clear a large backlog in one run,
-        # bounded so a genuinely huge backlog still can't blow the run's
-        # overall time budget.
+        # A payment method (still $0 real cost — a card only raises the rate
+        # ceiling, Voyage still bills against the 200M free-token grant either
+        # way) takes this from 3 RPM/10K TPM to 2000 RPM/16M TPM, at which
+        # point the whole backlog clears in well under a minute and this cap
+        # is pure waste. Rishu said he'd added one (2026-09-12) — DON'T trust
+        # that alone: raised this once already on his word plus an
+        # insufficiently-rigorous test (3 requests, which fits inside the
+        # free tier's own ceiling either way) and a real run promptly ate 5
+        # genuine 429s, Voyage's error body explicit that no payment method
+        # was active server-side yet. VOYAGE_MAX_PER_RUN (settings.py) is the
+        # actual control — verify with a real ~96-paper batch first (see that
+        # file's comment for the exact check), then raise it there once
+        # confirmed, not here.
         limit = min(limit, settings.VOYAGE_MAX_PER_RUN)
     rows = db.q(
         conn,

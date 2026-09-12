@@ -27,13 +27,25 @@ SEMANTIC_SCHOLAR_API_KEY = os.environ.get("SEMANTIC_SCHOLAR_API_KEY", "")
 # when this is unset and the ML deps happen to be installed (worker/requirements.txt).
 VOYAGE_API_KEY = os.environ.get("VOYAGE_API_KEY", "")
 VOYAGE_MODEL = os.environ.get("VOYAGE_MODEL", "voyage-4-lite")
-# Per-run cap on how many papers embed_new_papers() will attempt. With a
-# payment method on Voyage (2000 RPM / 16M TPM — still $0 real cost, a card
-# only raises the rate ceiling, not what's billed) a few thousand papers
-# clears in well under a minute; on the no-card 3RPM tier this should be
-# lowered back toward one batch (~96) to avoid compounding retry stalls —
-# see worker/enrich/embeddings.py's embed_new_papers() comment.
-VOYAGE_MAX_PER_RUN = int(os.environ.get("VOYAGE_MAX_PER_RUN", "5000"))
+# Per-run cap on how many papers embed_new_papers() will attempt. Once a
+# Voyage payment method is CONFIRMED active (2000 RPM / 16M TPM — still $0
+# real cost, a card only raises the rate ceiling, not what's billed), this can
+# go up to a few thousand and clear the backlog in well under a minute.
+#
+# Defaults to 96 (one batch) — the safe no-card-tier value — because this was
+# raised prematurely once already (2026-09-12) on Rishu's word that he'd added
+# a card, without actually verifying it server-side first, and a production
+# run promptly ate 5 real 429s and failed. Voyage's own error body was
+# unambiguous: {"detail": "You have not yet added your payment method... you
+# should see your rate limits increase after several minutes"} — so either it
+# hadn't propagated yet or the billing setup didn't fully complete. Don't
+# trust "I added the card" or a small (~3-request) test alone — 3 requests
+# fits inside the free tier's own 3RPM ceiling either way, so it can't
+# distinguish the two tiers. VERIFY with a real ~96-paper batch (the size that
+# actually exercises the limit) before raising this again — see the
+# diagnostic script pattern used to catch this, in worker/enrich/embeddings.py's
+# embed_new_papers() comment.
+VOYAGE_MAX_PER_RUN = int(os.environ.get("VOYAGE_MAX_PER_RUN", "96"))
 
 # arXiv politeness (do NOT lower the interval — a shared IP gets throttled fast)
 ARXIV_MIN_INTERVAL_SECONDS = float(os.environ.get("ARXIV_MIN_INTERVAL_SECONDS", "3.0"))
