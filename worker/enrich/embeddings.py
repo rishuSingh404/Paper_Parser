@@ -73,6 +73,15 @@ def _encode(model_or_cfg_name: str, texts: list[str], on_call=None) -> list[list
     return [[float(x) for x in v] for v in vecs]
 
 
+def _anchor_up_to_date(conn, kind: str, anchor_id: str, mv: str, text: str) -> bool:
+    row = db.q1(
+        conn,
+        "SELECT text FROM anchor_embeddings WHERE anchor_kind = %s AND anchor_id = %s AND model_version = %s",
+        (kind, anchor_id, mv),
+    )
+    return bool(row) and row["text"] == text
+
+
 def _upsert_anchor(conn, kind: str, anchor_id: str, mv: str, vec: list[float], text: str) -> None:
     db.execute(
         conn,
@@ -89,6 +98,22 @@ def embed_new_papers(conn: psycopg.Connection, model_version: str, *, limit: int
     if not AVAILABLE:
         return {"skipped": "no embedding backend configured (set VOYAGE_API_KEY, or install worker/requirements.txt)", "embedded": 0}
     mv = settings.VOYAGE_MODEL if HOSTED else model_version
+    if HOSTED:
+        # Voyage's no-card free tier caps at 3 requests/MINUTE. _encode_hosted's
+        # batch loop has no inter-batch pacing — it relies entirely on
+        # http.post_json's retry/backoff (starts at 3s, well under the ~20s a
+        # 3RPM cap actually needs) to survive the rate limit. One batch can
+        # burn several minutes of retries before the window clears; multiple
+        # sequential batches in one run compound that. Observed live: a run
+        # stuck 24+ minutes past ingestion with zero new api_call_log entries —
+        # not a hang, just this compounding across ~5 batches for a 400-paper
+        # limit. Capping to one batch means at most ONE slow retry cycle per
+        # run instead of up to five; the backlog just drains one batch/day
+        # instead of four, an already-accepted tradeoff (see module docstring —
+        # this pipeline is explicitly designed to degrade gracefully without
+        # embeddings at all, so a slower drain is a much smaller cost than
+        # risking the whole daily run).
+        limit = min(limit, _VOYAGE_BATCH)
     rows = db.q(
         conn,
         """
@@ -117,12 +142,22 @@ def embed_new_papers(conn: psycopg.Connection, model_version: str, *, limit: int
 
 
 def embed_anchors(conn: psycopg.Connection, cfg: dict, *, on_call=None) -> dict:
+    """open_problem / seed_paper anchors are static text — re-embedding all of
+    them every run wastes calls against Voyage's 3RPM no-card rate limit for
+    nothing, and compounds with embed_new_papers()'s own retries into exactly
+    the kind of multi-minute stall observed live (a run stuck 20+ minutes past
+    ingestion). Skipped once already embedded with matching text; only
+    liked_centroid is genuinely recomputed every run, since likes can change."""
     if not AVAILABLE:
         return {"skipped": "no embedding backend configured"}
     mv = active_model_version(cfg)
     n = 0
+    skipped = 0
 
     for i, text in enumerate(cfg.get("open_problems") or []):
+        if _anchor_up_to_date(conn, "open_problem", str(i), mv, text):
+            skipped += 1
+            continue
         (v,) = _encode(mv, [text], on_call=on_call)
         _upsert_anchor(conn, "open_problem", str(i), mv, v, text)
         n += 1
@@ -134,6 +169,9 @@ def embed_anchors(conn: psycopg.Connection, cfg: dict, *, on_call=None) -> dict:
             (sp, f"arxiv:{sp}"),
         )
         if not row:
+            continue
+        if _anchor_up_to_date(conn, "seed_paper", row["paper_id"], mv, row["title"]):
+            skipped += 1
             continue
         (v,) = _encode(mv, [f"{row['title']}\n{row['abstract'] or ''}"], on_call=on_call)
         _upsert_anchor(conn, "seed_paper", row["paper_id"], mv, v, row["title"])
@@ -153,4 +191,4 @@ def embed_anchors(conn: psycopg.Connection, cfg: dict, *, on_call=None) -> dict:
         _upsert_anchor(conn, "liked_centroid", "centroid", mv, centroid,
                        f"centroid of {len(vs)} liked papers")
         n += 1
-    return {"anchors": n, "backend": "voyage" if HOSTED else "local", "model": mv}
+    return {"anchors": n, "skipped_unchanged": skipped, "backend": "voyage" if HOSTED else "local", "model": mv}
