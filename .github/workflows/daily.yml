@@ -7,6 +7,21 @@ name: Paper Radar daily run
 # Repo secrets required (Settings -> Secrets and variables -> Actions):
 #   WORKER_URL              e.g. https://paper-radar-worker-api.onrender.com
 #   INTERNAL_SHARED_SECRET  same value as the Render env var
+#
+# /internal/run ACKs immediately ({"status": "started"}) and runs the actual
+# pipeline as a background task on the worker — it no longer blocks for the
+# run's full duration (was 4-20+ minutes), which used to hit Render's own
+# edge/proxy timeout and return a bare 502 to this step even when the
+# pipeline was running fine. So: HTTP 200 here means only "the trigger was
+# accepted", not "the pipeline succeeded" — that outcome lives in run_log,
+# the Telegram alert, and the dashboard, not in this response.
+#
+# Known gap: GitHub's own `schedule` trigger can be unreliable for a
+# newly-added workflow (silently skipped its very first scheduled occurrence
+# for this repo). If daily digests stop arriving, check this workflow's run
+# history first (Actions tab) before assuming the worker itself is down —
+# also worth setting up a free external cron-ping service (e.g.
+# cron-job.org) hitting the same URL/header as a redundant trigger.
 
 on:
   schedule:
@@ -16,20 +31,20 @@ on:
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 5
     steps:
       - name: POST /internal/run
         run: |
           set -e
-          # Render's free tier sleeps after inactivity; give it room to wake
-          # up plus the full pipeline runtime.
+          # Render's free tier sleeps after inactivity — give it room to wake
+          # up, but the response itself is now near-instant (fire-and-forget).
           code=$(curl -sS -o response.json -w "%{http_code}" \
-            --max-time 2100 --retry 2 --retry-delay 15 --retry-connrefused \
+            --max-time 120 --retry 2 --retry-delay 10 --retry-connrefused \
             -X POST "${{ secrets.WORKER_URL }}/internal/run" \
             -H "x-internal-secret: ${{ secrets.INTERNAL_SHARED_SECRET }}")
           echo "HTTP $code"
           cat response.json
           if [ "$code" != "200" ]; then
-            echo "::error::daily run failed with HTTP $code"
+            echo "::error::could not even start the daily run (HTTP $code) — worker may be down"
             exit 1
           fi
