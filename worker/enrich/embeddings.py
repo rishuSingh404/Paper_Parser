@@ -93,27 +93,31 @@ def _upsert_anchor(conn, kind: str, anchor_id: str, mv: str, vec: list[float], t
     )
 
 
-def embed_new_papers(conn: psycopg.Connection, model_version: str, *, limit: int = 400,
+def embed_new_papers(conn: psycopg.Connection, model_version: str, *, limit: int = 5000,
                      on_call=None) -> dict:
     if not AVAILABLE:
         return {"skipped": "no embedding backend configured (set VOYAGE_API_KEY, or install worker/requirements.txt)", "embedded": 0}
     mv = settings.VOYAGE_MODEL if HOSTED else model_version
     if HOSTED:
-        # Voyage's no-card free tier caps at 3 requests/MINUTE. _encode_hosted's
-        # batch loop has no inter-batch pacing — it relies entirely on
-        # http.post_json's retry/backoff (starts at 3s, well under the ~20s a
-        # 3RPM cap actually needs) to survive the rate limit. One batch can
-        # burn several minutes of retries before the window clears; multiple
-        # sequential batches in one run compound that. Observed live: a run
-        # stuck 24+ minutes past ingestion with zero new api_call_log entries —
-        # not a hang, just this compounding across ~5 batches for a 400-paper
-        # limit. Capping to one batch means at most ONE slow retry cycle per
-        # run instead of up to five; the backlog just drains one batch/day
-        # instead of four, an already-accepted tradeoff (see module docstring —
-        # this pipeline is explicitly designed to degrade gracefully without
-        # embeddings at all, so a slower drain is a much smaller cost than
-        # risking the whole daily run).
-        limit = min(limit, _VOYAGE_BATCH)
+        # Voyage's NO-CARD free tier caps at 3 requests/MINUTE, and
+        # _encode_hosted's batch loop has no inter-batch pacing of its own —
+        # relies entirely on http.post_json's retry/backoff (starts at 3s,
+        # well under the ~20s a 3RPM cap actually needs). One batch could burn
+        # several minutes of retries before the window cleared, and multiple
+        # sequential batches in one run compounded that — observed live, a run
+        # stuck 24+ minutes past ingestion. That's why this was capped to one
+        # batch (96) per run for a while.
+        #
+        # Rishu added a payment method 2026-09-12 (still $0 real cost — a card
+        # only raises the rate ceiling, Voyage still bills against the 200M
+        # free-token grant either way): free tier -> 2000 RPM / 16M TPM. At
+        # that ceiling the whole backlog (~4600 papers, ~1.4M tokens) clears
+        # in well under a minute of real request time, so the one-batch cap
+        # is now pure waste. VOYAGE_MAX_PER_RUN (env, default below) governs
+        # this instead — generous enough to clear a large backlog in one run,
+        # bounded so a genuinely huge backlog still can't blow the run's
+        # overall time budget.
+        limit = min(limit, settings.VOYAGE_MAX_PER_RUN)
     rows = db.q(
         conn,
         """

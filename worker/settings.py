@@ -27,6 +27,13 @@ SEMANTIC_SCHOLAR_API_KEY = os.environ.get("SEMANTIC_SCHOLAR_API_KEY", "")
 # when this is unset and the ML deps happen to be installed (worker/requirements.txt).
 VOYAGE_API_KEY = os.environ.get("VOYAGE_API_KEY", "")
 VOYAGE_MODEL = os.environ.get("VOYAGE_MODEL", "voyage-4-lite")
+# Per-run cap on how many papers embed_new_papers() will attempt. With a
+# payment method on Voyage (2000 RPM / 16M TPM — still $0 real cost, a card
+# only raises the rate ceiling, not what's billed) a few thousand papers
+# clears in well under a minute; on the no-card 3RPM tier this should be
+# lowered back toward one batch (~96) to avoid compounding retry stalls —
+# see worker/enrich/embeddings.py's embed_new_papers() comment.
+VOYAGE_MAX_PER_RUN = int(os.environ.get("VOYAGE_MAX_PER_RUN", "5000"))
 
 # arXiv politeness (do NOT lower the interval — a shared IP gets throttled fast)
 ARXIV_MIN_INTERVAL_SECONDS = float(os.environ.get("ARXIV_MIN_INTERVAL_SECONDS", "3.0"))
