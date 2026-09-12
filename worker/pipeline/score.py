@@ -20,11 +20,20 @@ gate — never a second bar to clear on top of the gate. (An earlier version
 additionally required embedding_sim above a floor to enter `cross_domain`,
 which silently routed a not-in-domain paper that passed the gate on a
 *lexical* or *co-citation* signal into the "in your field" list — exactly
-backwards; fixed.) `in_domain` = matched a niche_queries domain PHRASE
-("hallucination detection", "medical vision-language model", ...). Matching a
-seed_vocab MECHANISM term (`necessity ablation`, `latent steering`, ...) does
-NOT make a card in_domain — a mechanism you track turning up outside your
-domain is exactly the catch this is for.
+backwards; fixed.) `in_domain` = matched a niche.domain_marker_phrases()
+phrase — niche_phrases() minus a small, reviewed exclusion list of phrases
+too generic to independently mean "this is Rishu's domain" (currently just
+"vision-language" — common across all multimodal ML/robotics). Caught live: a
+pure robotics VLA world-model paper matched bare "vision-language" (leaked
+out of `abs:"hallucination detection" AND abs:"vision-language"` when
+flattened) and was misclassified as in_domain. (Tried requiring a query's
+phrases jointly as an AND-group instead: broke the opposite way, since a
+genuine hallucination-detection paper that doesn't also say "vision-language"
+— plenty don't — stopped counting as in_domain at all. See
+niche.domain_marker_phrases() docstring.) Matching a seed_vocab MECHANISM
+term (`necessity ablation`, `latent steering`, ...) does NOT make a card
+in_domain — a mechanism you track turning
+up outside your domain is exactly the catch this is for.
 
 Title-only fallback: a paper with no resolvable abstract is scored on its title
 alone with `abstract_missing=True` surfaced on the card — never dropped.
@@ -40,7 +49,7 @@ from .. import db, vectors
 from ..textutil import matched_terms, word_boundary_match
 from . import citation_tier
 from .momentum import momentum_for
-from .niche import niche_phrases
+from .niche import domain_marker_phrases
 
 _CANDIDATE_UNIVERSE_CAP = 1000  # lowered from 2500 (2026-09-11): the worker runs
 # on Render's free 512 MB instance; scoring builds an in-memory structure per
@@ -71,7 +80,7 @@ def score_broad(conn: psycopg.Connection, cfg: dict, current_week: str,
     weights = cfg.get("rank_weights") or {}
     gate = cfg.get("recall_gate_thresholds") or {}
     hard_cap = int(gate.get("hard_cap", 60))
-    domain_phrases = niche_phrases(cfg)
+    domain_phrases = domain_marker_phrases(cfg)
 
     vocab_w = {str(k).lower(): float(v) for k, v in (cfg.get("seed_vocab") or {}).items()}
     vocab_w.update({r["term"]: r["weight"] for r in db.q(conn, "SELECT term, weight FROM vocab")})

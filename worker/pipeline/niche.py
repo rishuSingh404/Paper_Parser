@@ -26,6 +26,30 @@ def niche_phrases(cfg: dict) -> list[str]:
     return sorted(set(p.strip() for p in out if len(p.strip()) >= 4))
 
 
+_TOO_GENERIC_FOR_DOMAIN_MARKER = {"vision-language"}
+# Phrases from niche_queries that are real, common ML/robotics vocabulary — not
+# specific to Rishu's domain — and so must never independently mark a paper as
+# in_domain, even though they're specific enough combined with another phrase
+# to make a good narrow arXiv NICHE query. Caught live: a pure robotics VLA
+# world-model paper (nothing to do with hallucination/safety) matched bare
+# "vision-language" — leaked out of `abs:"hallucination detection" AND
+# abs:"vision-language"` when niche_phrases() flattened it — and was
+# misclassified as `in_domain=True`. (Tried requiring the query's phrases
+# jointly as an AND-group instead of excluding the generic one: that broke the
+# opposite way, since a genuine hallucination-detection paper that doesn't
+# happen to also say "vision-language" — plenty don't — stopped counting as
+# in_domain at all. The actual distinction is semantic specificity of the
+# phrase itself, not the query's AND/OR structure, so this stays a small,
+# reviewed exclusion list rather than a structural rule.) Extend this set if a
+# future niche_query pairs a real domain phrase with another generic term.
+
+
+def domain_marker_phrases(cfg: dict) -> list[str]:
+    """niche_phrases(), minus phrases too generic to independently mean
+    "this paper is already in Rishu's domain" — see _TOO_GENERIC_FOR_DOMAIN_MARKER."""
+    return [p for p in niche_phrases(cfg) if p.lower() not in _TOO_GENERIC_FOR_DOMAIN_MARKER]
+
+
 def niche_feed(conn: psycopg.Connection, cfg: dict, *, days: int = 14, limit: int = 40) -> list[dict]:
     phrases = niche_phrases(cfg)
     if not phrases:
