@@ -133,6 +133,7 @@ def embed_new_papers(conn: psycopg.Connection, model_version: str, *, limit: int
         return {"embedded": 0, "backend": "voyage" if HOSTED else "local", "model": mv}
     texts = [f"{r['title']}\n{r['abstract'] or ''}".strip() for r in rows]
     batch = _VOYAGE_BATCH if HOSTED else 64
+    done = 0
     for i in range(0, len(rows), batch):
         for r, v in zip(rows[i:i + batch], _encode(mv, texts[i:i + batch], on_call=on_call)):
             db.execute(
@@ -141,7 +142,17 @@ def embed_new_papers(conn: psycopg.Connection, model_version: str, *, limit: int
                 "ON CONFLICT (paper_id, model_version) DO UPDATE SET embedding = EXCLUDED.embedding",
                 (r["paper_id"], mv, v),
             )
-    return {"embedded": len(rows), "backend": "voyage" if HOSTED else "local", "model": mv}
+            done += 1
+        # commit per batch, not just once at the very end. Hit this live: a
+        # run fetched 32 real embeddings back from Voyage (all clean 200s)
+        # then died on a connection drop before the enclosing `with
+        # db.connect()` block could commit — all 32 lost, nothing to show for
+        # real, billed API calls. With VOYAGE_MAX_PER_RUN now in the
+        # thousands this loop can run for a while; losing partial progress on
+        # a mid-run drop is exactly the failure mode backfill.py and run.py's
+        # ingestion phase already learned this lesson for.
+        conn.commit()
+    return {"embedded": done, "backend": "voyage" if HOSTED else "local", "model": mv}
 
 
 def embed_anchors(conn: psycopg.Connection, cfg: dict, *, on_call=None) -> dict:
