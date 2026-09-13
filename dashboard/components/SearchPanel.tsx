@@ -56,56 +56,60 @@ export function SearchPanel() {
   };
 
   return (
-    <div className="card">
-      <div className="mut" style={{ marginBottom: 8 }}>
-        Type a plain description of a sub-area you're working in — not arXiv
-        syntax, just words (e.g. "ECG signal hallucination detection"). This
-        builds the search for you, pulls the last 12 months of matching
-        papers from arXiv once, and keeps matching new ones from every daily
-        run after that — no need to touch the Niche queries box below.
+    <div>
+      <div className="card">
+        <p className="lede" style={{ margin: "0 0 12px" }}>
+          Type a plain description of a sub-area you're working in — not arXiv
+          syntax, just words (e.g. "ECG signal hallucination detection"). This
+          builds the search for you, pulls the last 12 months of matching
+          papers from arXiv once, and keeps matching new ones from every daily
+          run after that — no need to touch the Niche queries box below.
+        </p>
+        <div className="row">
+          <input
+            placeholder="e.g. ECG signal hallucination detection"
+            value={phrase}
+            onChange={(e) => setPhrase(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && add()}
+            style={{ minWidth: 280, flex: 1 }}
+          />
+          <button className="primary" disabled={busy || !phrase.trim()} onClick={add}>
+            {busy ? "searching…" : "Add & search"}
+          </button>
+        </div>
+        {msg && <div className="mut" style={{ marginTop: 8 }}>{msg}</div>}
       </div>
-      <div className="row">
-        <input
-          placeholder="e.g. ECG signal hallucination detection"
-          value={phrase}
-          onChange={(e) => setPhrase(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && add()}
-          style={{ minWidth: 320 }}
-        />
-        <button className="on" disabled={busy || !phrase.trim()} onClick={add}>
-          {busy ? "searching…" : "Add & search"}
-        </button>
-      </div>
-      {msg && <div className="mut" style={{ marginTop: 6 }}>{msg}</div>}
 
       {loaded && searches.length === 0 && (
-        <div className="mut" style={{ marginTop: 10 }}>No saved searches yet.</div>
+        <p className="mut" style={{ marginTop: 8 }}>No saved searches yet — add one above.</p>
       )}
 
       {searches.map((s) => {
         const transfers = (s.matches ?? []).filter((m: any) => m.possible_transfer);
         const inField = (s.matches ?? []).filter((m: any) => !m.possible_transfer);
         return (
-          <div key={s.id} style={{ marginTop: 16, borderTop: "1px solid var(--border, #333)", paddingTop: 10 }}>
-            <div className="row">
-              <b style={{ fontSize: 13.5 }}>{s.label}</b>
-              <span className="pill">{s.total} paper(s)</span>
-              <button onClick={() => remove(s.id)}>remove</button>
+          <div key={s.id} className="card accent-ok">
+            <div className="row" style={{ justifyContent: "space-between" }}>
+              <b style={{ fontSize: 14.5 }}>{s.label}</b>
+              <div className="row" style={{ flexShrink: 0 }}>
+                <span className="pill ok">{s.total} paper{s.total === 1 ? "" : "s"}</span>
+                <button onClick={() => remove(s.id)} title="remove this saved search">✕</button>
+              </div>
             </div>
 
             {transfers.length > 0 && (
-              <div style={{ marginTop: 8 }}>
-                <div className="mut" style={{ fontWeight: 600 }}>
+              <div style={{ marginTop: 10 }}>
+                <div className="mut" style={{ fontWeight: 700, color: "var(--ink)" }}>
                   🌍 {transfers.length} outside your broader domain — possible transfer into this
                 </div>
                 {transfers.slice(0, 20).map((m: any) => (
-                  <div key={m.paper_id} style={{ fontSize: 12.5, padding: "3px 0" }}>
-                    {fmtDate(m.announce_date)} ·{" "}
+                  <div key={m.paper_id} style={{ fontSize: 13, padding: "5px 0", lineHeight: 1.5 }}>
+                    <span className="faint">{fmtDate(m.announce_date)}</span> ·{" "}
                     {m.link ? <a href={m.link} target="_blank" rel="noreferrer">{m.title}</a> : m.title}
                     {m.embedding_sim != null && <span className="mut"> · sim {m.embedding_sim}</span>}
                     {!m.matched_locally && (
-                      <span className="mut" title="Found via arXiv's own relevance search on the initial add, not a literal word match — doesn't use your exact search words but arXiv judged it relevant">
-                        {" "}· found via arXiv search, not exact words
+                      <span className="faint" title="Found via arXiv's own relevance search on the initial add, not a literal word match — doesn't use your exact search words but arXiv judged it relevant">
+                        {" "}· via arXiv search
                       </span>
                     )}
                   </div>
@@ -114,11 +118,11 @@ export function SearchPanel() {
             )}
 
             {inField.length > 0 && (
-              <div style={{ marginTop: 8 }}>
+              <div style={{ marginTop: 10 }}>
                 <div className="mut">📍 {inField.length} already in your broader domain (hallucination/safety) — you'd find these anyway</div>
                 {inField.slice(0, 10).map((m: any) => (
-                  <div key={m.paper_id} style={{ fontSize: 12.5, padding: "3px 0", opacity: 0.75 }}>
-                    {fmtDate(m.announce_date)} ·{" "}
+                  <div key={m.paper_id} style={{ fontSize: 13, padding: "5px 0", opacity: 0.7 }}>
+                    <span className="faint">{fmtDate(m.announce_date)}</span> ·{" "}
                     {m.link ? <a href={m.link} target="_blank" rel="noreferrer">{m.title}</a> : m.title}
                   </div>
                 ))}
@@ -126,7 +130,7 @@ export function SearchPanel() {
             )}
 
             {s.total === 0 && (
-              <div className="mut" style={{ marginTop: 6 }}>
+              <div className="mut" style={{ marginTop: 8 }}>
                 Nothing yet — the historical backfill may still be running, or this sub-area
                 genuinely has little on arXiv yet. Check back after the next daily run.
               </div>

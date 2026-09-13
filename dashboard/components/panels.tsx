@@ -8,7 +8,7 @@ export function StalenessBanner({ s }: { s: any }) {
   return (
     <div className="banner">
       ⚠ Latest digest is <b>{s.days_old} days</b> old ({fmtDate(s.last_run_date)}). The daily
-      Render cron may be failing — check its logs. Signals below are not current.
+      run may be failing — check the Run log below. Signals below are not current.
     </div>
   );
 }
@@ -19,12 +19,12 @@ export function RisingTerms({ terms }: { terms: any[] }) {
   return (
     <div className="card">
       {terms.map((t) => (
-        <div key={t.term} className="row" style={{ margin: "6px 0" }}>
+        <div key={t.term} className="row" style={{ margin: "7px 0" }}>
           <span style={{ width: 190, fontSize: 12.5 }}>{t.term}</span>
           <div className="bar-track">
             <div className="bar-fill" style={{ width: `${(Math.abs(t.momentum) / max) * 100}%` }} />
           </div>
-          <span className="mut" style={{ width: 96, textAlign: "right" }}>
+          <span className="mut" style={{ width: 100, textAlign: "right" }}>
             Δ{t.momentum > 0 ? "+" : ""}{t.momentum} (now {t.current})
           </span>
         </div>
@@ -38,7 +38,7 @@ export function BurstList({ bursts }: { bursts: any[] }) {
   return (
     <div className="card">
       <b style={{ fontSize: 13 }}>Multi-lab bursts (tracked terms)</b>
-      <div className="row" style={{ marginTop: 6 }}>
+      <div className="row" style={{ marginTop: 8 }}>
         {bursts.map((b) => (
           <span key={b.term} className="pill">
             {b.term} — {b.distinct_groups} groups (was {b.prev_distinct_groups})
@@ -64,9 +64,9 @@ export function DiscoveryPanel({ discovery }: { discovery: any[] }) {
   }
   return (
     <div className="card">
-      <div style={{ marginBottom: 10 }}>
-        <b style={{ fontSize: 13 }}>🆕 First appearance — genuinely new this week</b>
-        <div className="mut" style={{ marginBottom: 6 }}>
+      <div style={{ marginBottom: 14 }}>
+        <b style={{ fontSize: 13.5 }}>🆕 First appearance — genuinely new this week</b>
+        <div className="mut" style={{ margin: "3px 0 8px" }}>
           Zero mentions anywhere in the last 8 weeks, now used by 2+ independent groups. This
           is the actual "JEPA at 2-3 papers" signal — read this list every week, it will
           mostly be noise, that is expected.
@@ -76,7 +76,7 @@ export function DiscoveryPanel({ discovery }: { discovery: any[] }) {
         ) : (
           <div className="row">
             {firstAppearance.map((d) => (
-              <span key={d.term} className="pill" style={{ borderColor: "var(--ok)", color: "var(--ok)" }}
+              <span key={d.term} className="pill ok tag"
                     title={`first seen this week, ${d.distinct_groups} independent groups`}>
                 {d.term} · {d.current_count} groups
               </span>
@@ -85,8 +85,8 @@ export function DiscoveryPanel({ discovery }: { discovery: any[] }) {
         )}
       </div>
       <div>
-        <b style={{ fontSize: 13 }}>📈 Still bursting — already had some presence</b>
-        <div className="mut" style={{ marginBottom: 6 }}>
+        <b style={{ fontSize: 13.5 }}>📈 Still bursting — already had some presence</b>
+        <div className="mut" style={{ margin: "3px 0 8px" }}>
           Rising above its own recent baseline, but not brand new — a later-stage version of
           the same signal.
         </div>
@@ -102,8 +102,8 @@ export function DiscoveryPanel({ discovery }: { discovery: any[] }) {
           </div>
         )}
       </div>
-      <div className="mut" style={{ marginTop: 8 }}>
-        Add one to your vocab from the config panel below if it looks like a real lead.
+      <div className="mut" style={{ marginTop: 10 }}>
+        Add one to your vocab from the config panel if it looks like a real lead.
       </div>
     </div>
   );
@@ -111,8 +111,10 @@ export function DiscoveryPanel({ discovery }: { discovery: any[] }) {
 
 function FeedbackButtons({ paperId, onDone }: { paperId: string; onDone: () => void }) {
   const [busy, setBusy] = useState(false);
+  const [picked, setPicked] = useState<string | null>(null);
   const send = async (verdict: string) => {
     setBusy(true);
+    setPicked(verdict);
     await fetch("/api/feedback", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -121,10 +123,17 @@ function FeedbackButtons({ paperId, onDone }: { paperId: string; onDone: () => v
     setBusy(false);
     onDone();
   };
+  const colorFor = (v: string) =>
+    v === "liked" ? "var(--ok)" : v === "disliked" ? "var(--hot)" : v === "saved" ? "var(--warm)" : "var(--muted)";
   return (
-    <div className="row" style={{ marginTop: 8 }}>
+    <div className="row" style={{ marginTop: 10 }}>
       {["liked", "disliked", "saved", "muted"].map((v) => (
-        <button key={v} disabled={busy} onClick={() => send(v)}>
+        <button
+          key={v}
+          disabled={busy}
+          onClick={() => send(v)}
+          style={picked === v ? { borderColor: colorFor(v), color: colorFor(v) } : undefined}
+        >
           {v === "liked" ? "👍 like" : v === "disliked" ? "👎 dislike" : v === "saved" ? "★ save" : "🔇 mute"}
         </button>
       ))}
@@ -132,99 +141,92 @@ function FeedbackButtons({ paperId, onDone }: { paperId: string; onDone: () => v
   );
 }
 
-export function BroadCard({ c, onFeedback }: { c: any; onFeedback: () => void }) {
-  const [open, setOpen] = useState(false);
+function SignalRow({ c }: { c: any }) {
   return (
-    <div className="card">
-      <div className="row">
-        <b style={{ fontSize: 13.5 }}>#{c.rank} {c.title}</b>
-        <span className="pill">{c.citation_tag.badge}{c.citation_tag.delta != null ? ` +${c.citation_tag.delta}/30d` : " no data"}</span>
-        <span className="pill">score {c.composite}</span>
+    <div className="faint" style={{ marginTop: 6 }}>
+      sim {c.signals.embedding_sim ?? "—"} · lexical {c.signals.lexical} · co-cite {c.signals.cocitation_velocity} ·
+      concepts {c.signals.concept_overlap} · HF {c.signals.hf_upvotes}
+    </div>
+  );
+}
+
+function AbstractToggle({ abstract }: { abstract: string | null }) {
+  const [open, setOpen] = useState(false);
+  if (!abstract) return null;
+  return (
+    <>
+      <button style={{ marginTop: 8 }} onClick={() => setOpen((v) => !v)}>
+        {open ? "hide abstract" : "abstract"}
+      </button>
+      {open && <div className="abx">{abstract}</div>}
+    </>
+  );
+}
+
+export function BroadCard({ c, onFeedback }: { c: any; onFeedback: () => void }) {
+  return (
+    <div className="card accent-field">
+      <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
+        <b style={{ fontSize: 14.5, lineHeight: 1.4 }}>#{c.rank} {c.title}</b>
+        <div className="row" style={{ flexShrink: 0 }}>
+          <span className="pill">{c.citation_tag.badge}{c.citation_tag.delta != null ? ` +${c.citation_tag.delta}/30d` : " no data"}</span>
+          <span className="pill">score {c.composite}</span>
+        </div>
       </div>
-      <div className="mut">
+      <div className="mut" style={{ marginTop: 4 }}>
         {(c.authors || []).slice(0, 5).join(", ")}{(c.authors || []).length > 5 ? " et al." : ""} · {fmtDate(c.announce_date)} ·{" "}
         {(c.sources || []).join(", ")} · {c.link ? <a href={c.link} target="_blank" rel="noreferrer">link</a> : "no link"}
         {c.abstract_missing ? " · ⚠ title-only (no abstract)" : ""}
       </div>
       <div className="why">🔎 {c.why}</div>
-      <div className="mut">
-        sim {c.signals.embedding_sim ?? "—"} · lexical {c.signals.lexical} · co-cite {c.signals.cocitation_velocity} ·
-        concepts {c.signals.concept_overlap} · HF {c.signals.hf_upvotes}
-      </div>
-      {c.abstract && (
-        <>
-          <button style={{ marginTop: 6 }} onClick={() => setOpen((v) => !v)}>
-            {open ? "hide abstract" : "abstract"}
-          </button>
-          {open && <div className="abx">{c.abstract}</div>}
-        </>
-      )}
+      <SignalRow c={c} />
+      <AbstractToggle abstract={c.abstract} />
       <FeedbackButtons paperId={c.paper_id} onDone={onFeedback} />
     </div>
   );
 }
 
 export function CrossDomainCard({ c, onFeedback }: { c: any; onFeedback: () => void }) {
-  const [open, setOpen] = useState(false);
   // The "field name" — a mechanism term this paper carries (e.g. "latent steering"), or,
   // failing that, the open-problem it's closest to. Shown first, big: this is the thing
   // Rishu wants to catch by name, the way "jepa" would have shown up here 5 months early.
   const fieldTag = (c.matched && c.matched[0]) || c.anchor_label || null;
   return (
-    <div className="card" style={{ borderColor: "var(--ok)" }}>
-      {fieldTag && (
-        <div className="pill" style={{ borderColor: "var(--ok)", color: "var(--ok)", display: "inline-block", marginBottom: 6, fontWeight: 600 }}>
-          🏷 {fieldTag}
+    <div className="card accent-ok">
+      {fieldTag && <div className="pill ok tag" style={{ marginBottom: 8 }}>🏷 {fieldTag}</div>}
+      <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
+        <b style={{ fontSize: 14.5, lineHeight: 1.4 }}>#{c.rank} {c.title}</b>
+        <div className="row" style={{ flexShrink: 0 }}>
+          <span className="pill ok">sim {c.signals.embedding_sim}</span>
+          <span className="pill">{c.citation_tag.badge}{c.citation_tag.delta != null ? ` +${c.citation_tag.delta}/30d` : " no data"}</span>
         </div>
-      )}
-      <div className="row">
-        <b style={{ fontSize: 13.5 }}>#{c.rank} {c.title}</b>
-        <span className="pill" style={{ borderColor: "var(--ok)", color: "var(--ok)" }}>
-          sim {c.signals.embedding_sim}
-        </span>
-        <span className="pill">{c.citation_tag.badge}{c.citation_tag.delta != null ? ` +${c.citation_tag.delta}/30d` : " no data"}</span>
       </div>
-      <div className="mut">
+      <div className="mut" style={{ marginTop: 4 }}>
         {(c.authors || []).slice(0, 5).join(", ")}{(c.authors || []).length > 5 ? " et al." : ""} · {fmtDate(c.announce_date)} ·{" "}
         {(c.sources || []).join(", ")} · {c.link ? <a href={c.link} target="_blank" rel="noreferrer">link</a> : "no link"}
         {c.abstract_missing ? " · ⚠ title-only (no abstract)" : ""}
       </div>
       <div className="why">🌍 {c.why}</div>
-      {c.abstract && (
-        <>
-          <button style={{ marginTop: 6 }} onClick={() => setOpen((v) => !v)}>
-            {open ? "hide abstract" : "abstract"}
-          </button>
-          {open && <div className="abx">{c.abstract}</div>}
-        </>
-      )}
+      <AbstractToggle abstract={c.abstract} />
       <FeedbackButtons paperId={c.paper_id} onDone={onFeedback} />
     </div>
   );
 }
 
 export function NicheCard({ c, onFeedback }: { c: any; onFeedback: () => void }) {
-  const [open, setOpen] = useState(false);
   return (
     <div className="card">
-      <div className="row">
-        <b style={{ fontSize: 13.5 }}>{c.title}</b>
-        {c.new_since_last_digest && <span className="pill" style={{ color: "var(--ok)", borderColor: "var(--ok)" }}>new</span>}
+      <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
+        <b style={{ fontSize: 14.5, lineHeight: 1.4 }}>{c.title}</b>
+        {c.new_since_last_digest && <span className="pill ok" style={{ flexShrink: 0 }}>new</span>}
       </div>
-      <div className="mut">
+      <div className="mut" style={{ marginTop: 4 }}>
         {(c.authors || []).slice(0, 5).join(", ")} · {fmtDate(c.announce_date)} ·{" "}
-        {c.link ? <a href={c.link} target="_blank" rel="noreferrer">link</a> : "no link"} ·
+        {c.link ? <a href={c.link} target="_blank" rel="noreferrer">link</a> : "no link"} ·{" "}
         matches {(c.matched || []).map((m: string) => `"${m}"`).join(", ")}
         {c.abstract_missing ? " · ⚠ title-only" : ""}
       </div>
-      {c.abstract && (
-        <>
-          <button style={{ marginTop: 6 }} onClick={() => setOpen((v) => !v)}>
-            {open ? "hide abstract" : "abstract"}
-          </button>
-          {open && <div className="abx">{c.abstract}</div>}
-        </>
-      )}
+      <AbstractToggle abstract={c.abstract} />
       <FeedbackButtons paperId={c.paper_id} onDone={onFeedback} />
     </div>
   );
@@ -235,14 +237,14 @@ export function ClusterRollup({ clusters }: { clusters: any[] }) {
   return (
     <div className="card">
       {clusters.map((cl) => (
-        <div key={cl.cluster_key} style={{ margin: "8px 0" }}>
+        <div key={cl.cluster_key} style={{ margin: "10px 0" }}>
           <div className="row">
-            <b style={{ fontSize: 13 }}>{(cl.label_terms || []).slice(0, 5).join(" · ")}</b>
+            <b style={{ fontSize: 13.5 }}>{(cl.label_terms || []).slice(0, 5).join(" · ")}</b>
             <span className="pill">
               {cl.size} papers{cl.prev_size != null ? ` (was ${cl.prev_size})` : ""}{cl.is_new ? " · new" : ""}
             </span>
           </div>
-          <div className="mut">reps: {(cl.representative_paper_ids || []).join(", ")}</div>
+          <div className="mut" style={{ marginTop: 2 }}>reps: {(cl.representative_paper_ids || []).join(", ")}</div>
         </div>
       ))}
     </div>
@@ -260,7 +262,7 @@ export function VocabPanel({ vocab }: { vocab: any[] }) {
           </span>
         ))}
       </div>
-      <div className="mut" style={{ marginTop: 6 }}>
+      <div className="mut" style={{ marginTop: 10 }}>
         <span className="pill seed">purple</span> = seed (permanent, still decays) · plain = learned (decays + prunes)
       </div>
     </div>
@@ -301,7 +303,7 @@ export function RunLogViewer({ runs }: { runs: any[] }) {
           {runs.map((r) => (
             <tr key={r.id}>
               <td>{r.id}</td><td>{fmtDate(r.run_date)}</td><td>{r.kind}</td>
-              <td style={{ color: r.status === "ok" ? "var(--ok)" : r.status === "error" ? "var(--hot)" : "var(--muted)" }}>{r.status}</td>
+              <td style={{ color: r.status === "ok" ? "var(--ok)" : r.status === "error" ? "var(--hot)" : "var(--muted)", fontWeight: 600 }}>{r.status}</td>
               <td className="mut">{r.finished_at ? new Date(r.finished_at).toLocaleTimeString() : "—"}</td>
               <td className="mut">
                 {["papers_upserted", "terms_tracked", "arxiv_niche", "arxiv_broad"]
