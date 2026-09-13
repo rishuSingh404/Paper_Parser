@@ -26,7 +26,10 @@ from .pipeline import terms as term_counts
 BROAD_MAX = settings.DAILY_BROAD_MAX_RESULTS
 TOP_SEED_TERMS_FOR_QUERIES = 8
 GENERIC_MAX_PER_QUERY = 20
-RUN_DAILY_TIMEOUT_SECONDS = 1200  # 20 min hard wall-clock ceiling — see run_daily()
+RUN_DAILY_TIMEOUT_SECONDS = 90  # TEMP: 90s for a live verification test (2026-09-13) that
+# run 31 hung 20+ minutes past its ceiling with the fix already deployed — need to confirm
+# fast whether the timeout mechanism itself is broken in production, or that run just started
+# on stale pre-fix code. REVERT to 1200 (20 min) once confirmed either way.
 
 
 def _generic_queries(conn, cfg: dict) -> list[str]:
