@@ -63,5 +63,18 @@ services:
     buildCommand: "pip install -r worker/requirements-core.txt"
     startCommand: "uvicorn worker.app:app --host 0.0.0.0 --port $PORT"
     healthCheckPath: /healthz
+    # Without this, Render redeploys (and restarts the container) on EVERY
+    # push to main, including dashboard-only changes — hit this live
+    # (2026-09-13): a UI-only commit killed an in-flight daily pipeline run
+    # mid-execution, the same "any push kills whatever's running" failure
+    # mode already worked around elsewhere (the pipeline lock, incremental
+    # commits) but avoidable outright here by just not rebuilding when
+    # nothing worker-relevant changed.
+    buildFilter:
+      paths:
+        - worker/**
+        - db/**
+        - render.yaml
+        - runtime.txt
     envVars:
       - fromGroup: paper-radar-shared
