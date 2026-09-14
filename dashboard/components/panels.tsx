@@ -54,22 +54,14 @@ export function DiscoveryPanel({ discovery }: { discovery: any[] }) {
   const bursting = (discovery ?? []).filter((d) => d.tier === "bursting");
 
   if (!discovery?.length) {
-    return (
-      <p className="mut">
-        Nothing outside your tracked vocab qualified this week — needs a few weeks of history
-        to build a baseline. This does not mean nothing new happened; it means nothing cleared
-        the "2+ independent groups" bar yet.
-      </p>
-    );
+    return <p className="mut">Nothing outside your tracked vocab qualified this week.</p>;
   }
   return (
     <div className="card">
       <div style={{ marginBottom: 14 }}>
-        <b style={{ fontSize: 13.5 }}>🆕 First appearance — genuinely new this week</b>
+        <b style={{ fontSize: 13.5 }}>First appearance</b>
         <div className="mut" style={{ margin: "3px 0 8px" }}>
-          Zero mentions anywhere in the last 8 weeks, now used by 2+ independent groups. This
-          is the actual "JEPA at 2-3 papers" signal — read this list every week, it will
-          mostly be noise, that is expected.
+          New this week, used by 2+ independent groups.
         </div>
         {firstAppearance.length === 0 ? (
           <span className="mut">none this week</span>
@@ -85,10 +77,9 @@ export function DiscoveryPanel({ discovery }: { discovery: any[] }) {
         )}
       </div>
       <div>
-        <b style={{ fontSize: 13.5 }}>📈 Still bursting — already had some presence</b>
+        <b style={{ fontSize: 13.5 }}>Still bursting</b>
         <div className="mut" style={{ margin: "3px 0 8px" }}>
-          Rising above its own recent baseline, but not brand new — a later-stage version of
-          the same signal.
+          Rising above its own recent baseline; already had some presence.
         </div>
         {bursting.length === 0 ? (
           <span className="mut">none this week</span>
@@ -102,9 +93,6 @@ export function DiscoveryPanel({ discovery }: { discovery: any[] }) {
           </div>
         )}
       </div>
-      <div className="mut" style={{ marginTop: 10 }}>
-        Add one to your vocab from the config panel if it looks like a real lead.
-      </div>
     </div>
   );
 }
@@ -112,31 +100,40 @@ export function DiscoveryPanel({ discovery }: { discovery: any[] }) {
 function FeedbackButtons({ paperId, onDone }: { paperId: string; onDone: () => void }) {
   const [busy, setBusy] = useState(false);
   const [picked, setPicked] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
   const send = async (verdict: string) => {
     setBusy(true);
-    setPicked(verdict);
-    await fetch("/api/feedback", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ paper_id: paperId, verdict }),
-    });
+    setFailed(false);
+    try {
+      const res = await fetch("/api/feedback", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ paper_id: paperId, verdict }),
+      });
+      if (!res.ok) throw new Error(String(res.status));
+      setPicked(verdict);
+      onDone();
+    } catch {
+      setFailed(true);
+    }
     setBusy(false);
-    onDone();
   };
   const colorFor = (v: string) =>
     v === "liked" ? "var(--ok)" : v === "disliked" ? "var(--hot)" : v === "saved" ? "var(--warm)" : "var(--muted)";
   return (
-    <div className="row" style={{ marginTop: 10 }}>
+    <div className="row" style={{ marginTop: 10, alignItems: "center" }}>
       {["liked", "disliked", "saved", "muted"].map((v) => (
         <button
           key={v}
           disabled={busy}
           onClick={() => send(v)}
-          style={picked === v ? { borderColor: colorFor(v), color: colorFor(v) } : undefined}
+          style={picked === v ? { borderColor: colorFor(v), color: colorFor(v), background: "var(--card-soft)" } : undefined}
         >
-          {v === "liked" ? "👍 like" : v === "disliked" ? "👎 dislike" : v === "saved" ? "★ save" : "🔇 mute"}
+          {v === "liked" ? "Like" : v === "disliked" ? "Dislike" : v === "saved" ? "Save" : "Mute"}
         </button>
       ))}
+      {picked && <span className="mut" style={{ color: colorFor(picked) }}>recorded</span>}
+      {failed && <span className="mut" style={{ color: "var(--hot)" }}>failed — try again</span>}
     </div>
   );
 }
@@ -185,7 +182,7 @@ export function BroadCard({ c, onFeedback }: { c: any; onFeedback: () => void })
         {(c.sources || []).join(", ")} · {c.link ? <a href={c.link} target="_blank" rel="noreferrer">link</a> : "no link"}
         {c.abstract_missing ? " · ⚠ title-only (no abstract)" : ""}
       </div>
-      <div className="why">🔎 {c.why}</div>
+      <div className="why">{c.why}</div>
       <SignalRow c={c} />
       <AbstractToggle abstract={c.abstract} />
       <FeedbackButtons paperId={c.paper_id} onDone={onFeedback} />
@@ -221,7 +218,7 @@ export function CrossDomainCard({ c, onFeedback, showTag = true }: { c: any; onF
   const sim = c.signals?.embedding_sim;
   return (
     <div className="card accent-ok">
-      {showTag && fieldTag && <div className="pill ok tag" style={{ marginBottom: 8 }}>🏷 {fieldTag}</div>}
+      {showTag && fieldTag && <div className="pill ok tag" style={{ marginBottom: 8 }}>{fieldTag}</div>}
       <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
         <b style={{ fontSize: 14.5, lineHeight: 1.4 }}>{c.title}</b>
         <div className="row" style={{ flexShrink: 0 }}>
@@ -234,7 +231,7 @@ export function CrossDomainCard({ c, onFeedback, showTag = true }: { c: any; onF
         {(c.sources || []).join(", ")} · {c.link ? <a href={c.link} target="_blank" rel="noreferrer">link</a> : "no link"}
         {c.abstract_missing ? " · ⚠ title-only (no abstract)" : ""}
       </div>
-      <div className="why">🌍 {c.why}</div>
+      <div className="why">{c.why}</div>
       <AbstractToggle abstract={c.abstract} />
       <FeedbackButtons paperId={c.paper_id} onDone={onFeedback} />
     </div>
@@ -301,7 +298,7 @@ export function WorkingPanel({ working }: { working: any[] }) {
   return (
     <div className="card">
       {!working?.length ? (
-        <p className="mut">No rated broad-track cards yet. precision@10 appears once you 👍/👎 a few digests.</p>
+        <p className="mut">No rated broad-track cards yet. precision@10 appears once you rate a few digests.</p>
       ) : (
         <table>
           <thead>

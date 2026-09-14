@@ -40,7 +40,7 @@ export function SearchPanel() {
       if (!res.ok) {
         setMsg(`✗ ${data.error ?? "failed"}`);
       } else {
-        setMsg(`✓ found ${data.total} paper(s) so far — historical backfill running in the background, check back in a few minutes for more`);
+        setMsg(`✓ found ${data.total} paper(s) so far — backfill running in the background`);
         setPhrase("");
         await load();
       }
@@ -58,12 +58,9 @@ export function SearchPanel() {
   return (
     <div>
       <div className="card">
-        <p className="lede" style={{ margin: "0 0 12px" }}>
-          Type a plain description of a sub-area you're working in — not arXiv
-          syntax, just words (e.g. "ECG signal hallucination detection"). This
-          builds the search for you, pulls the last 12 months of matching
-          papers from arXiv once, and keeps matching new ones from every daily
-          run after that — no need to touch the Niche queries box below.
+        <p className="tab-intro" style={{ margin: "0 0 12px" }}>
+          Describe a sub-area in plain words. Pulls the last 12 months from arXiv once, then
+          matches new papers on every daily run.
         </p>
         <div className="row">
           <input
@@ -100,7 +97,7 @@ export function SearchPanel() {
             {transfers.length > 0 && (
               <div style={{ marginTop: 10 }}>
                 <div className="mut" style={{ fontWeight: 700, color: "var(--ink)" }}>
-                  🌍 {transfers.length} outside your broader domain — possible transfer into this
+                  {transfers.length} outside your broader domain — possible transfer into this
                 </div>
                 {transfers.slice(0, 20).map((m: any) => (
                   <div key={m.paper_id} style={{ fontSize: 13, padding: "5px 0", lineHeight: 1.5 }}>
@@ -119,7 +116,7 @@ export function SearchPanel() {
 
             {inField.length > 0 && (
               <div style={{ marginTop: 10 }}>
-                <div className="mut">📍 {inField.length} already in your broader domain (hallucination/safety) — you'd find these anyway</div>
+                <div className="mut">{inField.length} already in your broader domain</div>
                 {inField.slice(0, 10).map((m: any) => (
                   <div key={m.paper_id} style={{ fontSize: 13, padding: "5px 0", opacity: 0.7 }}>
                     <span className="faint">{fmtDate(m.announce_date)}</span> ·{" "}

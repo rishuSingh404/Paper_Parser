@@ -124,9 +124,10 @@ export function ConfigPanel({ config, onSaved }: { config: any; onSaved: () => v
       <h3 style={{ fontSize: 13, margin: "14px 0 4px" }}>Seed papers (arXiv ids, one per line)</h3>
       <textarea value={seedPapers} onChange={(e) => setSeedPapers(e.target.value)} style={{ minHeight: 60 }} />
 
-      <div className="row" style={{ marginTop: 14 }}>
+      <div className="row" style={{ marginTop: 14, alignItems: "center" }}>
         <button className="primary" disabled={saving || !token} onClick={save}>Save</button>
-        <span className="mut">{msg}</span>
+        {!token && !msg && <span className="mut">enter your edit token above to enable Save</span>}
+        {msg && <span className="mut">{msg}</span>}
       </div>
 
       {justAdded.length > 0 && (
