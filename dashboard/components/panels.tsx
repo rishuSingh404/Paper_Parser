@@ -142,10 +142,17 @@ function FeedbackButtons({ paperId, onDone }: { paperId: string; onDone: () => v
 }
 
 function SignalRow({ c }: { c: any }) {
+  const parts = [
+    c.signals.embedding_sim != null ? `sim ${c.signals.embedding_sim}` : null,
+    c.signals.lexical ? `lexical ${c.signals.lexical}` : null,
+    c.signals.cocitation_velocity ? `co-cite ${c.signals.cocitation_velocity}` : null,
+    c.signals.concept_overlap ? `concepts ${c.signals.concept_overlap}` : null,
+    c.signals.hf_upvotes ? `HF ${c.signals.hf_upvotes}` : null,
+  ].filter(Boolean);
+  if (parts.length === 0) return null;
   return (
     <div className="faint" style={{ marginTop: 6 }}>
-      sim {c.signals.embedding_sim ?? "—"} · lexical {c.signals.lexical} · co-cite {c.signals.cocitation_velocity} ·
-      concepts {c.signals.concept_overlap} · HF {c.signals.hf_upvotes}
+      {parts.join(" · ")}
     </div>
   );
 }
@@ -169,7 +176,7 @@ export function BroadCard({ c, onFeedback }: { c: any; onFeedback: () => void })
       <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
         <b style={{ fontSize: 14.5, lineHeight: 1.4 }}>#{c.rank} {c.title}</b>
         <div className="row" style={{ flexShrink: 0 }}>
-          <span className="pill">{c.citation_tag.badge}{c.citation_tag.delta != null ? ` +${c.citation_tag.delta}/30d` : " no data"}</span>
+          {c.citation_tag.delta != null && <span className="pill">{c.citation_tag.badge} +{c.citation_tag.delta}/30d</span>}
           <span className="pill">score {c.composite}</span>
         </div>
       </div>
@@ -186,19 +193,40 @@ export function BroadCard({ c, onFeedback }: { c: any; onFeedback: () => void })
   );
 }
 
-export function CrossDomainCard({ c, onFeedback }: { c: any; onFeedback: () => void }) {
-  // The "field name" — a mechanism term this paper carries (e.g. "latent steering"), or,
-  // failing that, the open-problem it's closest to. Shown first, big: this is the thing
-  // Rishu wants to catch by name, the way "jepa" would have shown up here 5 months early.
-  const fieldTag = (c.matched && c.matched[0]) || c.anchor_label || null;
+// The "field name" — a mechanism term this paper carries (e.g. "latent steering"), or,
+// failing that, the open-problem it's closest to. This is the thing Rishu wants to catch
+// by name, the way "jepa" would have shown up here 5 months early.
+function fieldTagOf(c: any): string | null {
+  return (c.matched && c.matched[0]) || c.anchor_label || null;
+}
+
+// One header per tag instead of repeating the same 🏷 pill on every card — a
+// generic term (e.g. "decorrelation" hitting unrelated physics/archaeology
+// papers) reads as noisy repetition otherwise, capped to 4/tag server-side
+// but still visually loud without grouping. "other" bucket last.
+export function groupCrossDomain(cards: any[]): { tag: string; cards: any[] }[] {
+  const order: string[] = [];
+  const groups = new Map<string, any[]>();
+  for (const c of cards) {
+    const tag = fieldTagOf(c) ?? "other";
+    if (!groups.has(tag)) { groups.set(tag, []); order.push(tag); }
+    groups.get(tag)!.push(c);
+  }
+  order.sort((a, b) => (a === "other" ? 1 : b === "other" ? -1 : 0));
+  return order.map((tag) => ({ tag, cards: groups.get(tag)! }));
+}
+
+export function CrossDomainCard({ c, onFeedback, showTag = true }: { c: any; onFeedback: () => void; showTag?: boolean }) {
+  const fieldTag = fieldTagOf(c);
+  const sim = c.signals?.embedding_sim;
   return (
     <div className="card accent-ok">
-      {fieldTag && <div className="pill ok tag" style={{ marginBottom: 8 }}>🏷 {fieldTag}</div>}
+      {showTag && fieldTag && <div className="pill ok tag" style={{ marginBottom: 8 }}>🏷 {fieldTag}</div>}
       <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
-        <b style={{ fontSize: 14.5, lineHeight: 1.4 }}>#{c.rank} {c.title}</b>
+        <b style={{ fontSize: 14.5, lineHeight: 1.4 }}>{c.title}</b>
         <div className="row" style={{ flexShrink: 0 }}>
-          <span className="pill ok">sim {c.signals.embedding_sim}</span>
-          <span className="pill">{c.citation_tag.badge}{c.citation_tag.delta != null ? ` +${c.citation_tag.delta}/30d` : " no data"}</span>
+          {sim != null && <span className="pill ok">sim {sim}</span>}
+          {c.citation_tag.delta != null && <span className="pill">{c.citation_tag.badge} +{c.citation_tag.delta}/30d</span>}
         </div>
       </div>
       <div className="mut" style={{ marginTop: 4 }}>

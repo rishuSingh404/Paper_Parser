@@ -73,6 +73,7 @@ CROSS_DOMAIN_CAP = 35  # was 20 — Rishu's own read: "still it is less". This i
 # not true structural similarity; a Voyage payment method (no minimum deposit, same $0
 # real cost against the 200M free-token grant) raises that to 2000 RPM and is the real
 # fix for ranking QUALITY here, this cap only affects how many get shown.
+MAX_PER_CROSS_DOMAIN_TAG = 4  # see the comment where this is used, below
 
 
 def _minmax(values: list[float]) -> callable:
@@ -192,8 +193,33 @@ def score_broad(conn: psycopg.Connection, cfg: dict, current_week: str,
     # "in your field" bucket — exactly backwards. `in_domain` (matched a
     # niche_queries domain PHRASE, e.g. "hallucination detection") is the only
     # test: not matching it is what "not your field" means, full stop.
-    cross = sorted((s for s in scored if not s["in_domain"]),
-                    key=lambda s: -(s["sig"]["embedding_sim"] or 0.0))[:CROSS_DOMAIN_CAP]
+    cross_sorted = sorted((s for s in scored if not s["in_domain"]),
+                          key=lambda s: -(s["sig"]["embedding_sim"] or 0.0))
+    # Cap how many cards ONE matched term can contribute. Caught live
+    # (2026-09-14, Rishu's own read of the dashboard): "decorrelation" alone
+    # produced 12 of 15 visible cards — ultrasound-speckle physics, an
+    # archaeology pigment study, a Parkinson's-disease paper, dijets at the
+    # LHC — all genuine uses of the word, none connected to his actual
+    # verifier-decorrelation thesis. With no embeddings yet on any of them
+    # (sim=None ties them all at the bottom of the sort, so cap order is
+    # otherwise arbitrary — falls back to recency), lexical match alone can't
+    # tell "your specific sense of decorrelation" from "any statistics paper
+    # that happens to say decorrelation" — a generic-enough term dominates the
+    # whole section and crowds out every other, more diverse signal. This
+    # doesn't require knowing WHICH terms are generic in advance (a denylist
+    # already exists for the worst offenders, e.g. "vision-language" in
+    # domain_marker_phrases) — it just guarantees no single tag can eat the
+    # whole list, so diversity holds even for a term nobody's flagged yet.
+    tag_counts: dict[str, int] = {}
+    cross: list[dict] = []
+    for s in cross_sorted:
+        tag = s["matched"][0] if s["matched"] else "—"
+        if tag_counts.get(tag, 0) >= MAX_PER_CROSS_DOMAIN_TAG:
+            continue
+        tag_counts[tag] = tag_counts.get(tag, 0) + 1
+        cross.append(s)
+        if len(cross) >= CROSS_DOMAIN_CAP:
+            break
 
     # ---- main list: in_domain candidates, ranked by the usual composite -----
     main = [s for s in scored if s["in_domain"]]

@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import {
-  BroadCard, BurstList, ClusterRollup, CrossDomainCard, DiscoveryPanel, NicheCard,
+  BroadCard, BurstList, ClusterRollup, CrossDomainCard, DiscoveryPanel, groupCrossDomain, NicheCard,
   RisingTerms, RunLogViewer, StalenessBanner, VocabPanel, WorkingPanel,
 } from "@/components/panels";
 import { ConfigPanel } from "@/components/ConfigPanel";
@@ -68,7 +68,14 @@ export default function Page() {
       {crossDomain.length === 0 && (
         <p className="mut">Nothing cleared the cross-domain bar this week — quiet is a valid output.</p>
       )}
-      {crossDomain.map((c: any) => <CrossDomainCard key={c.paper_id} c={c} onFeedback={load} />)}
+      {groupCrossDomain(crossDomain).map((g) => (
+        <div key={g.tag} style={{ marginTop: 14 }}>
+          {g.tag !== "other" && (
+            <div className="pill ok tag" style={{ marginBottom: 8 }}>🏷 {g.tag} <span className="mut">({g.cards.length})</span></div>
+          )}
+          {g.cards.map((c: any) => <CrossDomainCard key={c.paper_id} c={c} onFeedback={load} showTag={g.tag === "other"} />)}
+        </div>
+      ))}
 
       <h2>📍 Papers in your field <span className="mut" style={{ fontFamily: "var(--sans)", fontWeight: 500, fontSize: 14 }}>({broad.length}{d?.broad_ranked_truncated_at ? ` · truncated at ${d.broad_ranked_truncated_at}` : ""})</span></h2>
       <p className="lede">
