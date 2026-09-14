@@ -109,3 +109,26 @@ def internal_bootstrap(background_tasks: BackgroundTasks,
     background_tasks.add_task(_run_bootstrap_bg)
     return {"status": "started", "note": "running in background — check run_log "
             "for the outcome, not this response"}
+
+
+@app.post("/internal/watchdog")
+def internal_watchdog(x_internal_secret: str | None = Header(default=None)) -> dict:
+    """Independent health check — deliberately NOT tied to the daily run
+    firing. Observed live (2026-09-13/14): a run's container died externally
+    mid-run, well past run_daily()'s own 20-minute timeout, but the process
+    was simply gone before it could report that — no in-process fix can cover
+    "the process itself died". check_and_alert_staleness() previously only
+    ever ran as a side effect of a SUCCESSFUL run_daily() call, so if the
+    daily trigger itself kept missing (GitHub's `schedule` trigger has
+    skipped entirely before), NOTHING would ever notice or alert. This
+    endpoint runs both checks on its own schedule (see
+    .github/workflows/watchdog.yml), independent of whether the daily
+    pipeline ever fires: reap_stale_runs() unblocks future triggers and
+    surfaces the failure, check_and_alert_staleness() catches "no digest in
+    26h" even if run_daily() hasn't run at all, successfully or not. Fast —
+    two queries, no external API calls — so no BackgroundTask needed."""
+    _check_secret(x_internal_secret)
+    from .observability import check_and_alert_staleness, reap_stale_runs
+    reaped = reap_stale_runs()
+    check_and_alert_staleness()
+    return {"status": "ok", "reaped": reaped}

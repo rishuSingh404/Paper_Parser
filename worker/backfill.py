@@ -44,6 +44,11 @@ def run_bootstrap() -> dict:
         lock_conn.close()
         return {"status": "skipped", "reason": "another pipeline run is already in progress"}
 
+    # See run.py's matching comment — getting the lock proves any 'running'
+    # row left over is orphaned, not a real conflict. Self-heal here too.
+    from .observability import reap_stale_runs
+    reap_stale_runs()
+
     rlog = RunLog(kind="backfill", run_date=today).start()
 
     def on_call(**kw):

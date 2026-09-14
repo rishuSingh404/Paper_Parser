@@ -86,3 +86,61 @@ def check_and_alert_staleness() -> None:
             f"[Paper Radar] No successful run in {age.total_seconds() / 3600:.0f}h. "
             f"Check the Render cron logs."
         )
+
+
+# A hung network call inside run_daily()'s own thread gets caught by its
+# in-process 20-minute timeout (see run.py) — but that only helps if the
+# PROCESS stays alive long enough to report it. Observed live (2026-09-13/14):
+# a run's container was killed/restarted externally (Render, for whatever
+# reason) mid-run, well past the 20-minute ceiling but the row never updated
+# — the process was simply gone before it could write its own failure. The
+# pipeline advisory lock auto-releases when that happens (session-scoped,
+# tied to the dead connection), so a NEW trigger isn't blocked — but the old
+# run_log row is left permanently stuck at "running", which both looks like
+# an active run (it isn't) and hides the fact that a digest was silently
+# missed. No in-process fix can cover "the process itself died"; this has to
+# be an external check.
+STALE_RUNNING_THRESHOLD_MINUTES = 25  # a bit past run.py's 20-min ceiling
+
+
+def reap_stale_runs() -> list[int]:
+    """Mark any run_log row stuck at 'running' past the threshold as 'error'.
+    Safe to call anytime, including with a real run in progress: a genuinely
+    active run finishes well under the threshold in the normal case, and
+    run.py's own 20-minute ceiling guarantees it never legitimately runs
+    past ~20 minutes — so anything still 'running' at 25+ minutes is, by
+    construction, orphaned. Returns the ids it reaped."""
+    with db.connect() as conn:
+        rows = db.q(
+            conn,
+            "SELECT id, kind, started_at FROM run_log WHERE status = 'running' "
+            "AND started_at < now() - make_interval(mins => %s)",
+            (STALE_RUNNING_THRESHOLD_MINUTES,),
+        )
+        for r in rows:
+            db.execute(
+                conn,
+                "UPDATE run_log SET status = 'error', finished_at = now(), "
+                "errors = errors || %s::jsonb WHERE id = %s",
+                (
+                    Json([{
+                        "where": "reaper",
+                        "error": (
+                            "orphaned: stuck at 'running' past the "
+                            f"{STALE_RUNNING_THRESHOLD_MINUTES}-minute threshold with no "
+                            "resolution — the process almost certainly died externally "
+                            "(container restart) before it could report its own outcome"
+                        ),
+                        "at": dt.datetime.utcnow().isoformat(timespec="seconds"),
+                    }]),
+                    r["id"],
+                ),
+            )
+    ids = [r["id"] for r in rows]
+    if ids:
+        telegram.send(
+            f"[Paper Radar] Found {len(ids)} stuck run(s) (ids {ids}) that never reported "
+            "back — likely a container restart mid-run. Marked as failed so future runs "
+            "aren't blocked. If digests keep going missing, this is worth a closer look."
+        )
+    return ids

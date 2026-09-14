@@ -96,6 +96,15 @@ def run_daily(kind: str = "daily") -> dict:
         lock_conn.close()
         return {"status": "skipped", "reason": "another pipeline run is already in progress"}
 
+    # Getting the lock proves no OTHER run is genuinely active right now — so
+    # any run_log row still saying 'running' at this point is provably
+    # orphaned (its process died before reporting its own outcome; see
+    # observability.reap_stale_runs()), not a real conflict. Self-heal on
+    # every trigger, on top of the independent watchdog endpoint, so a run
+    # right after an orphan doesn't sit there looking like it's still active.
+    from .observability import reap_stale_runs
+    reap_stale_runs()
+
     rlog = RunLog(kind=kind, run_date=today).start()
 
     def on_call(**kw):

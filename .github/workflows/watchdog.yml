@@ -1,0 +1,44 @@
+name: Paper Radar watchdog
+
+# Independent health check — deliberately NOT tied to daily.yml firing.
+#
+# Why this exists: GitHub's own `schedule` trigger has skipped entirely more
+# than once for this repo (2026-09-11's very first occurrence, and again
+# 2026-09-14 — no run recorded for that day at all). Separately, a pipeline
+# run's container can die externally mid-run (a Render restart) well past its
+# own 20-minute in-process timeout, leaving run_log stuck at "running"
+# forever and silently blocking nothing from noticing — because the ONLY
+# thing that used to check "has anything succeeded lately" was a side effect
+# of a run finishing successfully. If the daily trigger itself keeps missing,
+# that check never ran either.
+#
+# This workflow runs on its own schedule, independent of daily.yml, and calls
+# /internal/watchdog: reaps any run_log row stuck at 'running' past 25
+# minutes (provably orphaned — see worker/observability.py's
+# reap_stale_runs()) and alerts on Telegram if no run has succeeded in the
+# last 26h, regardless of whether daily.yml ever fired. Same repo secrets as
+# daily.yml.
+
+on:
+  schedule:
+    - cron: "0 */2 * * *"   # every 2 hours
+  workflow_dispatch: {}
+
+jobs:
+  watchdog:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: POST /internal/watchdog
+        run: |
+          set -e
+          code=$(curl -sS -o response.json -w "%{http_code}" \
+            --max-time 120 --retry 2 --retry-delay 10 --retry-connrefused \
+            -X POST "${{ secrets.WORKER_URL }}/internal/watchdog" \
+            -H "x-internal-secret: ${{ secrets.INTERNAL_SHARED_SECRET }}")
+          echo "HTTP $code"
+          cat response.json
+          if [ "$code" != "200" ]; then
+            echo "::error::watchdog check itself failed (HTTP $code) — worker may be down"
+            exit 1
+          fi
