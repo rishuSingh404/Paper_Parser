@@ -5,12 +5,19 @@ a later pipeline step raises.
 """
 from __future__ import annotations
 
+import contextlib
 import datetime as dt
-from typing import Any
+import logging
+import threading
+from typing import Any, Iterator
 
+import httpx
 from psycopg.types.json import Json
 
-from . import db, telegram
+from . import db, settings, telegram
+
+log = logging.getLogger("paper_radar.heartbeat")
+HEARTBEAT_INTERVAL_SECONDS = 240  # 4 min — comfortably under Render's ~15-min idle spin-down
 
 
 class RunLog:
@@ -144,3 +151,35 @@ def reap_stale_runs() -> list[int]:
             "aren't blocked. If digests keep going missing, this is worth a closer look."
         )
     return ids
+
+
+@contextlib.contextmanager
+def heartbeat() -> Iterator[None]:
+    """Self-ping this worker's own /healthz every HEARTBEAT_INTERVAL_SECONDS
+    for as long as the `with` block stays open — wrap the real pipeline work
+    in this. See settings.WORKER_PUBLIC_URL's comment for the reasoning:
+    Render's free tier spins a service down after ~15 min with no incoming
+    HTTP traffic, and /internal/run's instant-ACK + background-thread pattern
+    means nothing else reaches Render's edge for the rest of a run once that
+    response goes out — the idle clock has nothing to reset it. Suspected as
+    the actual cause of three runs dying silently 10-35 minutes in
+    (2026-09-13/14), all after switching to that pattern. A periodic self-ping
+    is free traffic that keeps the clock reset for the run's whole duration.
+    Ping failures are logged and swallowed — never allowed to affect the
+    actual pipeline, which doesn't depend on this succeeding either way."""
+    stop = threading.Event()
+
+    def _loop() -> None:
+        while not stop.wait(HEARTBEAT_INTERVAL_SECONDS):
+            try:
+                httpx.get(f"{settings.WORKER_PUBLIC_URL}/healthz", timeout=15)
+            except Exception as exc:  # noqa: BLE001
+                log.warning("heartbeat ping failed: %r", exc)
+
+    t = threading.Thread(target=_loop, daemon=True, name="heartbeat")
+    t.start()
+    try:
+        yield
+    finally:
+        stop.set()
+        t.join(timeout=2)

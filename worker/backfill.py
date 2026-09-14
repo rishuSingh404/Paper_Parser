@@ -46,7 +46,7 @@ def run_bootstrap() -> dict:
 
     # See run.py's matching comment — getting the lock proves any 'running'
     # row left over is orphaned, not a real conflict. Self-heal here too.
-    from .observability import reap_stale_runs
+    from .observability import heartbeat, reap_stale_runs
     reap_stale_runs()
 
     rlog = RunLog(kind="backfill", run_date=today).start()
@@ -55,6 +55,8 @@ def run_bootstrap() -> dict:
         rlog.api_call(source=kw.pop("source", "?"), endpoint=kw.pop("endpoint", "?"), **kw)
 
     seen: set[str] = set()
+    hb = heartbeat()
+    hb.__enter__()
     try:
         with db.connect() as conn:
             cfg = config_store.load(conn)
@@ -159,6 +161,7 @@ def run_bootstrap() -> dict:
         print(json.dumps(summary, indent=2, default=str), file=sys.stderr)
         raise
     finally:
+        hb.__exit__(None, None, None)
         release_pipeline_lock(lock_conn)
         lock_conn.close()
 

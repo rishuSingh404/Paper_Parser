@@ -102,7 +102,7 @@ def run_daily(kind: str = "daily") -> dict:
     # observability.reap_stale_runs()), not a real conflict. Self-heal on
     # every trigger, on top of the independent watchdog endpoint, so a run
     # right after an orphan doesn't sit there looking like it's still active.
-    from .observability import reap_stale_runs
+    from .observability import heartbeat, reap_stale_runs
     reap_stale_runs()
 
     rlog = RunLog(kind=kind, run_date=today).start()
@@ -122,7 +122,11 @@ def run_daily(kind: str = "daily") -> dict:
         pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
         future = pool.submit(_run_daily_body, kind, today, week, rlog, on_call)
         try:
-            result = future.result(timeout=RUN_DAILY_TIMEOUT_SECONDS)
+            # heartbeat() keeps real HTTP traffic hitting this service for the
+            # whole wait, not just while future.result() blocks — see its
+            # docstring: suspected root cause of three silent mid-run deaths.
+            with heartbeat():
+                result = future.result(timeout=RUN_DAILY_TIMEOUT_SECONDS)
             pool.shutdown(wait=False)
             return result
         except concurrent.futures.TimeoutError:

@@ -15,6 +15,17 @@ TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 # Public dashboard URL (used only for the "full digest" link in the Telegram message)
 DASHBOARD_URL = os.environ.get("DASHBOARD_URL", "")
 
+# This worker's OWN public URL — used only for the self-heartbeat (see
+# run.py's _heartbeat()). Render's free web services spin down after ~15 min
+# with no incoming HTTP traffic; /internal/run ACKs instantly and does the
+# real work in a background thread, so once that response goes out, nothing
+# else reaches Render's edge for the rest of a run — the idle clock has
+# nothing to reset it. Observed live (2026-09-13/14): three separate runs
+# died silently 10-35 minutes in, right in that window, only since switching
+# to the instant-ACK pattern. A self-ping to this URL every few minutes
+# during a run is free traffic that keeps the idle clock reset.
+WORKER_PUBLIC_URL = os.environ.get("WORKER_PUBLIC_URL", "https://paper-radar-worker-api.onrender.com")
+
 # Enrichment (all optional — the system degrades to arXiv-only without them)
 OPENALEX_API_KEY = os.environ.get("OPENALEX_API_KEY", "")
 CORE_API_KEY = os.environ.get("CORE_API_KEY", "")
