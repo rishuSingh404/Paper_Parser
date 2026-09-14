@@ -178,24 +178,60 @@ def _run_daily_body(kind: str, today: dt.date, week: str, rlog: RunLog, on_call)
                 except Exception as exc:
                     rlog.error("term_backfill.drain", exc)
                     _rb()
+                # Circuit breaker: each arxiv.search() call already retries up to
+                # ARXIV_MAX_RETRIES times with exponential backoff internally
+                # (~170s worst case) before raising. During a *sustained* 429
+                # block — not a transient blip — every single niche query (there
+                # can be 10+, including self-service ones from the dashboard)
+                # exhausts that same ~170s independently, which single-handedly
+                # burns the whole RUN_DAILY_TIMEOUT_SECONDS budget on arXiv alone
+                # and starves every other source, scoring, and the digest write
+                # of any time at all — the run produces literally nothing.
+                # Observed live (2026-09-14): run 41 made 22 arXiv requests, ALL
+                # 429, across the full 20-minute window, with no other pipeline
+                # step ever reached. Worse, hammering an already-blocked IP with
+                # dozens more requests per run is plausibly *why* the block was
+                # still in effect 8+ hours later across 5 consecutive runs (37,
+                # 38, 39, 40, 41) that morning — this only ever adds load during
+                # an active penalty window, never lets it cool down. Two
+                # consecutive full-retry-exhausted queries is strong enough
+                # evidence of a sustained block (a single flaky query rarely
+                # survives 5 backed-off retries and still fails) to stop for the
+                # rest of THIS run — resets fresh next run, so a recovered arXiv
+                # is tried again normally rather than staying "open" forever.
+                ARXIV_CIRCUIT_BREAKER_THRESHOLD = 2
+                arxiv_consecutive_failures = 0
+                arxiv_circuit_open = False
                 for query in cfg["niche_queries"]:
+                    if arxiv_circuit_open:
+                        rlog.error(f"arxiv_niche:{query[:40]}",
+                                   "skipped — arXiv circuit breaker open "
+                                   f"({arxiv_consecutive_failures} consecutive failures this run)")
+                        continue
                     try:
                         _, batch = arxiv.search(query, max_results=settings.DAILY_MAX_RESULTS_PER_QUERY,
                                                 on_call=on_call)
                         seen.update(upsert_papers_batch(conn, batch))
                         rlog.incr("arxiv_niche", len(batch))
+                        arxiv_consecutive_failures = 0
                     except Exception as exc:
                         rlog.error(f"arxiv_niche:{query[:40]}", exc)
                         _rb()
+                        arxiv_consecutive_failures += 1
+                        if arxiv_consecutive_failures >= ARXIV_CIRCUIT_BREAKER_THRESHOLD:
+                            arxiv_circuit_open = True
                         continue
-                broad_q = " OR ".join(f"cat:{c}" for c in cfg["broad_categories"])
-                try:
-                    _, bbatch = arxiv.search(broad_q, max_results=BROAD_MAX, on_call=on_call)
-                    seen.update(upsert_papers_batch(conn, bbatch))
-                    rlog.incr("arxiv_broad", len(bbatch))
-                except Exception as exc:
-                    rlog.error("arxiv_broad", exc)
-                    _rb()
+                if arxiv_circuit_open:
+                    rlog.error("arxiv_broad", "skipped — arXiv circuit breaker open")
+                else:
+                    broad_q = " OR ".join(f"cat:{c}" for c in cfg["broad_categories"])
+                    try:
+                        _, bbatch = arxiv.search(broad_q, max_results=BROAD_MAX, on_call=on_call)
+                        seen.update(upsert_papers_batch(conn, bbatch))
+                        rlog.incr("arxiv_broad", len(bbatch))
+                    except Exception as exc:
+                        rlog.error("arxiv_broad", exc)
+                        _rb()
 
             # ---- step 1b: generic sources (no arXiv lock) --------------------
             gq = _generic_queries(conn, cfg)
