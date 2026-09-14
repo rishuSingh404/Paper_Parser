@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 import unicodedata
 
-from .stopwords import ACRONYM_STOPWORDS, DOMAIN_STOP_BIGRAMS, STOPWORDS
+from .stopwords import ACRONYM_STOPWORDS, DOMAIN_STOP_BIGRAMS, GENERIC_REPORTING_WORDS, STOPWORDS
 
 _ACRONYM_RE = re.compile(r"\b(?:[A-Z]{2,6}|[A-Z][a-z]+[A-Z][a-zA-Z0-9]*)\b")
 
@@ -86,16 +86,44 @@ def matched_terms(terms: list[str], text: str) -> list[str]:
     return [t for t in terms if re.search(r"\b" + escape_term_python(t) + r"\b", low)]
 
 
+_ENGLISH_MARKERS = frozenset({
+    "the", "and", "of", "in", "a", "to", "is", "that", "for", "with", "as",
+    "on", "are", "by", "this", "we", "an", "from", "at", "be", "it",
+})
+
+
+def looks_like_english(text: str) -> bool:
+    """Cheap language guard for corpus-wide bigram scanning. Non-English
+    abstracts are alphabetic Latin-script text too (unlike, say, CJK), so a
+    plain isalpha() word filter doesn't catch them — caught live
+    (2026-09-14): "penelitian kuantitatif" (Indonesian for "quantitative
+    research", from one of the non-arXiv aggregators that carry
+    international-repository content arXiv wouldn't) surfaced as a "first
+    appearance" discovery term. English prose runs a high, consistent density
+    of a small set of extremely common function words; require a minimum
+    presence of them rather than attempting real language detection (no LLM,
+    no extra dependency) — same "small reviewed heuristic, not exhaustive
+    precision" spirit as the stopword lists themselves."""
+    words = normalize_ws(text).lower().split()
+    if len(words) < 12:
+        return True  # too short to judge reliably — don't over-filter
+    marker_count = sum(1 for w in words if w in _ENGLISH_MARKERS)
+    return (marker_count / len(words)) >= 0.08
+
+
 def extract_bigrams(text: str) -> list[str]:
     """Lowercase adjacent-word bigrams, minus stopwords/domain-stop-bigrams and
     anything too short. Shared by vocab growth (worker.pipeline.vocab),
     config suggestions, and corpus-wide burst discovery."""
+    if not looks_like_english(text):
+        return []
     words = [w for w in normalize_ws(text).lower().split() if w.isalpha() or "-" in w]
     grams = [f"{a} {b}" for a, b in zip(words, words[1:])]
     return [
         g for g in grams
         if g not in DOMAIN_STOP_BIGRAMS
         and not any(part in STOPWORDS for part in g.split())
+        and not any(part in GENERIC_REPORTING_WORDS for part in g.split())
         and len(g) >= 8
     ]
 

@@ -27,6 +27,15 @@ STOPWORDS: frozenset[str] = frozenset({
     "existing", "prior", "current", "given", "here", "there", "them", "they",
     "one", "two", "three", "four", "five", "six", "seven", "eight", "nine",
     "ten", "all", "any", "no", "first", "second", "third",
+    # hedging/intensifier adverbs + generic comparison words — same category
+    # as "different"/"various"/"several" above (never part of a fixed
+    # technical term name, always modifying something else). Caught live
+    # (2026-09-14): "largely determines" and "broadly similar" surfaced as
+    # discovery terms — neither word pair means anything on its own.
+    "similar", "similarly", "significant", "significantly", "largely",
+    "broadly", "strongly", "highly", "notably", "notable", "substantially",
+    "substantial", "considerably", "considerable", "markedly", "marked",
+    "effectively",
 })
 
 # extra noise that must never be promoted to a learned vocab term / flagged as
@@ -65,6 +74,34 @@ DOMAIN_STOP_BIGRAMS: frozenset[str] = frozenset({
     "remains largely", "poorly understood", "not well", "lack of",
     "address this", "to address", "key challenge", "main challenge",
     "propose novel", "introduce novel", "present novel",
+    # more boilerplate caught live (2026-09-14, Rishu's own read: "how will I
+    # even understand what is emerging" — this exact list, unfiltered, was
+    # the complaint) — reporting-language phrases plus a few techniques so
+    # ubiquitous by now they carry the same zero discovery-signal as
+    # "language models"/"deep learning" above, not because they're fake.
+    "high precision", "positive correlation", "negative correlation",
+    "controlled trials", "clinical trials", "state-of-the-art performance",
+    "achieved state-of-the-art", "vision-language models",
+    "retrieval-augmented generation",
+})
+
+# Generic result-reporting words: if EITHER word of a bigram is one of these,
+# the bigram is near-certain boilerplate no matter what the other word is
+# ("results indicate", "results suggest", "achieved state-of-the-art") —
+# scoped to words that are essentially always used as reporting verbs/nouns
+# and essentially never form half of a real fixed technical term (unlike,
+# say, "precision"/"accuracy"/"performance"/"correlation"/"robust", each of
+# which IS part of a real term elsewhere — "precision medicine", "spurious
+# correlation", "robust performance" — so deliberately left OUT of this set
+# and handled instead as exact DOMAIN_STOP_BIGRAMS entries above). Word-level
+# rather than phrase-level so the next boilerplate collocation using one of
+# these verbs doesn't need to be caught and added one phrase at a time.
+GENERIC_REPORTING_WORDS: frozenset[str] = frozenset({
+    "results", "result", "indicate", "indicates", "indicated", "suggest",
+    "suggests", "suggested", "demonstrate", "demonstrates", "demonstrated",
+    "achieve", "achieves", "achieved", "achieving", "outperform",
+    "outperforms", "outperformed", "determine", "determines", "determined",
+    "compared", "comparison",
 })
 
 # Acronym/coinage-shaped tokens (ALL-CAPS or CamelCase, e.g. "JEPA", "LoRA")
@@ -92,6 +129,10 @@ ACRONYM_STOPWORDS: frozenset[str] = frozenset({
     "neurips", "icml", "iclr", "cvpr", "eccv", "iccv", "acl", "emnlp",
     "naacl", "aaai", "ijcai", "kdd", "www", "sigir", "miccai", "auroc",
     "auprc", "mrr", "ndcg", "wer", "cer", "mae", "rmse", "mse",
+    # more caught live (2026-09-14): old/ubiquitous techniques or
+    # infrastructure standards, same reasoning as pca/svm/knn/sql above —
+    # not fake signals, just carrying zero discovery information by now.
+    "lda", "sparql", "mitre", "nvd", "icd", "cfr", "rss", "scl",
 })
 
 
