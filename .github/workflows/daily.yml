@@ -22,10 +22,22 @@ name: Paper Radar daily run
 # history first (Actions tab) before assuming the worker itself is down —
 # also worth setting up a free external cron-ping service (e.g.
 # cron-job.org) hitting the same URL/header as a redundant trigger.
+#
+# Timing (2026-09-15, Rishu's own point: "we are never getting a daily
+# output at 8"): this used to fire at 03:00 UTC = 08:30 IST, meaning it
+# hadn't even STARTED by 8am IST, let alone finished — checking the
+# dashboard at 8 always showed yesterday's digest regardless of whether the
+# run itself was healthy. Moved to 00:30 UTC = 06:00 IST, a ~2h cushion
+# before 8am even on a slow day (normal run: a few minutes; worst case
+# under RUN_DAILY_TIMEOUT_SECONDS: 20 min). The cron-job.org backup trigger
+# (external, not in this repo) should be moved the same way — see the
+# memory note / ask Rishu for the current value — ideally ~30-60 min AFTER
+# this one (e.g. 01:30 UTC / 07:00 IST) so it acts as a real second chance
+# if this trigger silently doesn't fire, not a simultaneous duplicate.
 
 on:
   schedule:
-    - cron: "0 3 * * *"   # 03:00 UTC daily
+    - cron: "30 0 * * *"   # 00:30 UTC daily (06:00 IST)
   workflow_dispatch: {}    # allows a manual "Run workflow" trigger too
 
 jobs:
