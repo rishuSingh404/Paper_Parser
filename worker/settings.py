@@ -55,6 +55,22 @@ VOYAGE_MODEL = os.environ.get("VOYAGE_MODEL", "voyage-4-lite")
 # exact check before touching this value — a small request proves nothing.
 VOYAGE_MAX_PER_RUN = int(os.environ.get("VOYAGE_MAX_PER_RUN", "5000"))
 
+# Separate, much smaller cap for the DAILY pipeline specifically (run.py
+# passes this explicitly; worker.backfill's one-off bootstrap keeps using
+# embed_new_papers's own 5000 default, unchanged — a controlled one-time
+# catch-up is a different risk profile than every ordinary day). Added
+# 2026-09-15 after run 44: with no explicit limit, a daily run defaulted to
+# min(5000, VOYAGE_MAX_PER_RUN) = 5000 — comfortably more than the 1,040-paper
+# backlog that had built up after ~30h of failed runs, so it tried to embed
+# the WHOLE backlog in one run, layered on top of everything else already
+# running in the same process (ingestion from 7 sources, scoring, clustering)
+# on Render's memory-constrained worker tier. The run died silently mid-batch
+# with no error logged — the signature of a hard kill (OOM), not a graceful
+# failure; see score.py's _CANDIDATE_UNIVERSE_CAP comment for the same prior
+# pattern. A bounded daily slice means a large backlog drains gradually
+# across several days instead of risking the whole run in one memory spike.
+DAILY_EMBED_LIMIT = int(os.environ.get("DAILY_EMBED_LIMIT", "150"))
+
 # arXiv politeness (do NOT lower the interval — a shared IP gets throttled fast)
 ARXIV_MIN_INTERVAL_SECONDS = float(os.environ.get("ARXIV_MIN_INTERVAL_SECONDS", "3.0"))
 # Lowered from 5 (2026-09-15): during a sustained 429 block a single query

@@ -321,7 +321,8 @@ def _run_daily_body(kind: str, today: dt.date, week: str, rlog: RunLog, on_call)
                 rlog.error("enrich:citations", exc)
             try:
                 rlog.stat("embed_papers", embeddings.embed_new_papers(
-                    conn, cfg["embedding_model_version"], on_call=on_call))
+                    conn, cfg["embedding_model_version"],
+                    limit=settings.DAILY_EMBED_LIMIT, on_call=on_call))
                 rlog.stat("embed_anchors", embeddings.embed_anchors(conn, cfg, on_call=on_call))
             except Exception as exc:
                 rlog.error("enrich:embeddings", exc)
