@@ -193,13 +193,21 @@ def _run_daily_body(kind: str, today: dt.date, week: str, rlog: RunLog, on_call)
                 # dozens more requests per run is plausibly *why* the block was
                 # still in effect 8+ hours later across 5 consecutive runs (37,
                 # 38, 39, 40, 41) that morning — this only ever adds load during
-                # an active penalty window, never lets it cool down. Two
-                # consecutive full-retry-exhausted queries is strong enough
-                # evidence of a sustained block (a single flaky query rarely
-                # survives 5 backed-off retries and still fails) to stop for the
-                # rest of THIS run — resets fresh next run, so a recovered arXiv
-                # is tried again normally rather than staying "open" forever.
-                ARXIV_CIRCUIT_BREAKER_THRESHOLD = 2
+                # an active penalty window, never lets it cool down.
+                #
+                # Lowered from 2 to 1 (2026-09-15): even with the breaker
+                # working exactly as designed (runs 42/43 correctly opened it
+                # after 2 failures and skipped the rest), those first 2 queries
+                # alone still took 5-10+ minutes each when arXiv was timing out
+                # rather than fast-429ing — long enough that the DB connection,
+                # sitting idle that whole time, died ('OperationalError: the
+                # connection is lost') before the run could even reach the
+                # non-arXiv sources it was supposed to fall back to. Combined
+                # with the shorter ARXIV_REQUEST_TIMEOUT_SECONDS/ARXIV_MAX_RETRIES
+                # (settings.py), one fully-exhausted query is now both faster to
+                # reach and still real signal (a single flaky query essentially
+                # never survives even a leaner retry budget and still fails).
+                ARXIV_CIRCUIT_BREAKER_THRESHOLD = 1
                 arxiv_consecutive_failures = 0
                 arxiv_circuit_open = False
                 for query in cfg["niche_queries"]:

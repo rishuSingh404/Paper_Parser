@@ -77,7 +77,8 @@ def _get(params: dict, on_call: OnCall | None) -> feedparser.FeedParserDict:
         _pace()
         t0 = time.monotonic()
         try:
-            resp = httpx.get(url, headers={"User-Agent": settings.USER_AGENT}, timeout=60.0)
+            resp = httpx.get(url, headers={"User-Agent": settings.USER_AGENT},
+                             timeout=settings.ARXIV_REQUEST_TIMEOUT_SECONDS)
             latency = int((time.monotonic() - t0) * 1000)
             if on_call:
                 on_call(source="arxiv", endpoint="query", status=resp.status_code, latency_ms=latency)

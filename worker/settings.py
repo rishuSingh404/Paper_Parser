@@ -57,8 +57,21 @@ VOYAGE_MAX_PER_RUN = int(os.environ.get("VOYAGE_MAX_PER_RUN", "5000"))
 
 # arXiv politeness (do NOT lower the interval — a shared IP gets throttled fast)
 ARXIV_MIN_INTERVAL_SECONDS = float(os.environ.get("ARXIV_MIN_INTERVAL_SECONDS", "3.0"))
-ARXIV_MAX_RETRIES = int(os.environ.get("ARXIV_MAX_RETRIES", "5"))
+# Lowered from 5 (2026-09-15): during a sustained 429 block a single query
+# exhausting 5 retries with a 60s timeout and growing backoff was measured
+# taking 5+ minutes in production (run 42/43's api_call_log — individual
+# attempts logged at 15.5s/25.9s/30.7s/45.6s/60.6s). The run's own arXiv
+# circuit breaker (run.py) needs only 1-2 queries to prove a sustained block,
+# so a smaller per-query budget here means it actually trips fast instead of
+# still burning most of the run's time budget before it gets the chance to.
+ARXIV_MAX_RETRIES = int(os.environ.get("ARXIV_MAX_RETRIES", "2"))
 ARXIV_BACKOFF_START_SECONDS = float(os.environ.get("ARXIV_BACKOFF_START_SECONDS", "5.0"))
+# Was a 60s hardcoded httpx timeout in ingest/arxiv.py — same measured cause
+# as above: a hung/slow connection could eat a full 60s per attempt on its
+# own, independent of the backoff between attempts. 429 responses are near-
+# instant when arXiv actually answers (~200-400ms observed); anything not
+# back by 15s is already a hang, not a real response worth waiting out.
+ARXIV_REQUEST_TIMEOUT_SECONDS = float(os.environ.get("ARXIV_REQUEST_TIMEOUT_SECONDS", "15.0"))
 
 # Bound on the dashboard-triggered inline backfill so it stays inside the
 # serverless timeout. Leftover is finished by the next daily run (pipeline step 0).
